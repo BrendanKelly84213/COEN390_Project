@@ -33,10 +33,15 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# with sensor hooked up
+# with sensor hooked up (defaults to 1 sensor on 1 bus, i2c-1 address 0x44)
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 
-# with no sensor
+# with 2 sensors hooked up on 2 buses (i2c-1,i2c-0)
+export SENSOR_BUSES=1,0
+export SENSOR_ADDRESSES=0x44,0x44
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+# with no sensor 
 SENSOR_MODE=fake uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
