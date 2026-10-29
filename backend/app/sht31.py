@@ -46,7 +46,7 @@ def sht31_read(bus_num: int, addr: int = 0x44) -> tuple[float, float]:
 
         read_msg = i2c_msg.read(addr, 6)
         bus.i2c_rdwr(read_msg)
-        data = list(read_msg.buf)
+        data = list(read_msg)
 
     raw_t = (data[0] << 8) | data[1]
     raw_h = (data[3] << 8) | data[4]
