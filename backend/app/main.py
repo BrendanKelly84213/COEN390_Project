@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from sht31 import sht31_read
+from .sht31 import sht31_read
 
 log = logging.getLogger("sensor-api")
 POLL_INTERVAL_S = float(os.getenv("POLL_INTERVAL_S", "2"))

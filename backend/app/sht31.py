@@ -1,6 +1,5 @@
 # sht31.py
 import time
-from smbus2 import SMBus, i2c_msg
 import os
 import random
 
@@ -15,6 +14,10 @@ CMD_MEASURE = (0x24, 0x00)
 def sht31_read() -> tuple[float, float]:
     if FAKE:
         return round(random.uniform(20, 25), 2), round(random.uniform(40, 60), 2)
+
+    # Silly workaround because smbus linux only and I'm just trying to get an example working on windows
+    from smbus2 import SMBus, i2c_msg  # Linux-only, so import it here
+
     with SMBus(1) as bus:
         # write the command to read (no clock stretching, high repeatability)
         msg = i2c_msg.write(sht31_addr, CMD_MEASURE) 
