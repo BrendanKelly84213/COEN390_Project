@@ -5,35 +5,68 @@ import random
 
 FAKE = os.getenv("SENSOR_MODE") == "fake"
 
-sht31_addr = 0x44
-
-# disable clock stretching for now (this has been a headache in the past for me)
-# HIGH repeatability, high duration
 CMD_MEASURE = (0x24, 0x00)
 
-def sht31_read() -> tuple[float, float]:
+def _parse_int_list(value: str | None, default: list[int]) -> list[int]:
+    if value is None or value.strip() == "":
+        return default
+
+    parsed: list[int] = []
+    for item in value.split(","):
+        item = item.strip()
+        if item:
+            parsed.append(int(item, 0))
+
+    return parsed or default
+
+def get_sensor_configs() -> list[tuple[int, int]]:
+    buses = _parse_int_list(os.getenv("SENSOR_BUSES"), [1])
+    addresses = _parse_int_list(os.getenv("SENSOR_ADDRESSES"), [0x44])
+
+    if len(buses) == 1 and len(addresses) > 1:
+        return [(buses[0], addr) for addr in addresses]
+    if len(addresses) == 1 and len(buses) > 1:
+        return [(bus, addresses[0]) for bus in buses]
+    if len(buses) == len(addresses):
+        return list(zip(buses, addresses))
+
+    count = min(len(buses), len(addresses))
+    return [(buses[i], addresses[i]) for i in range(count)]
+
+def sht31_read(bus_num: int, addr: int = 0x44) -> tuple[float, float]:
     if FAKE:
         return round(random.uniform(20, 25), 2), round(random.uniform(40, 60), 2)
 
-    # Silly workaround because smbus linux only and I'm just trying to get an example working on windows
-    from smbus2 import SMBus, i2c_msg  # Linux-only, so import it here
+    from smbus2 import SMBus, i2c_msg
 
-    with SMBus(1) as bus:
-        # write the command to read (no clock stretching, high repeatability)
-        msg = i2c_msg.write(sht31_addr, CMD_MEASURE) 
-        bus.i2c_rdwr(msg);
-        time.sleep(0.02) # wait for measurement to finish
-        # read 6 bytes from the device (2 bytes temperature, 2 bytes humidity, 2 bytes CRC)
-        # note the datasheet mentions something about specific something or other for ignoring the CRC, I think we'll just grab it and ignore it for now until we can be certain about the polynomial 
-        rd = i2c_msg.read(sht31_addr, 6) 
-        bus.i2c_rdwr(rd)
-        data = list(rd)
+    with SMBus(bus_num) as bus:
+        write_msg = i2c_msg.write(addr, list(CMD_MEASURE))
+        bus.i2c_rdwr(write_msg)
+        time.sleep(0.02)
 
-        raw_t = (data[0] << 8) | data[1]
-        raw_h = (data[3] << 8) | data[4]
-        
-        rel_h = 100 * (raw_h >> 15)  # relative humidity percentage
-        temp_c = -45 + 175 * (raw_t >> 15) # temperature in celcius
-        temp_f = -49 + 315 * (raw_t >> 15) # temperature in fertnhanht
+        read_msg = i2c_msg.read(addr, 6)
+        bus.i2c_rdwr(read_msg)
+        data = list(read_msg.buf)
 
-        return rel_h, temp_c
+    raw_t = (data[0] << 8) | data[1]
+    raw_h = (data[3] << 8) | data[4]
+
+    temp_c = -45.0 + (175.0 * raw_t / 65535.0)
+    humidity_pct = 100.0 * raw_h / 65535.0
+
+    return temp_c, humidity_pct
+
+def read_all_sensors() -> list[dict]:
+    readings: list[dict] = []
+    for index, (bus_num, addr) in enumerate(get_sensor_configs(), start=1):
+        temp_c, humidity_pct = sht31_read(bus_num, addr)
+        readings.append(
+            {
+                "id": f"sensor_{index}",
+                "bus_num": bus_num,
+                "address": f"0x{addr:02X}",
+                "temperature_c": round(temp_c, 2),
+                "humidity_pct": round(humidity_pct, 2),
+            }
+        )
+    return readings
