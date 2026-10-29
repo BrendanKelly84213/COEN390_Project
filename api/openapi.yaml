@@ -3,19 +3,19 @@ info:
   title: Sensor API
   version: 1.0.0
 servers:
-  - url: http://raspberrypi.local:8000
+  - url: http://127.0.0.1:8000
 paths:
   /api/v1/sensor_data:
     get:
-      summary: Latest temperature and humidity reading
+      summary: Latest readings from all configured sensors
       operationId: getSensorData
       responses:
         "200":
-          description: Latest reading
+          description: Latest sensor readings bundle
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/SensorData"
+                $ref: "#/components/schemas/SensorBundle"
         "503":
           description: No reading available yet (sensor not ready or failing)
           content:
@@ -24,10 +24,19 @@ paths:
                 $ref: "#/components/schemas/Error"
 components:
   schemas:
-    SensorData:
+    SensorReading:
       type: object
-      required: [temperature_c, humidity_pct, timestamp]
+      required: [id, bus_num, address, temperature_c, humidity_pct]
       properties:
+        id:
+          type: string
+          example: sensor_1
+        bus_num:
+          type: integer
+          example: 1
+        address:
+          type: string
+          example: "0x44"
         temperature_c:
           type: number
           format: float
@@ -36,6 +45,14 @@ components:
           type: number
           format: float
           example: 48.1
+    SensorBundle:
+      type: object
+      required: [sensors, timestamp]
+      properties:
+        sensors:
+          type: array
+          items:
+            $ref: "#/components/schemas/SensorReading"
         timestamp:
           type: string
           format: date-time

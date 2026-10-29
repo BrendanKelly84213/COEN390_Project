@@ -5,6 +5,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -32,15 +34,21 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-data class SensorData(
+data class SensorReading(
+    val id: String,
+    val busNum: Int,
+    val address: String,
     val temperatureC: Double,
-    val humidityPct: Double,
+    val humidityPct: Double
+)
+
+data class SensorBundle(
+    val sensors: List<SensorReading>,
     val timestamp: String
 )
 
-suspend fun fetchSensorData(baseUrl: String): SensorData? = withContext(Dispatchers.IO) {
+suspend fun fetchSensorData(baseUrl: String): SensorBundle? = withContext(Dispatchers.IO) {
     try {
-
         val url = URL("$baseUrl/api/v1/sensor_data")
         val connection = url.openConnection() as HttpURLConnection
         connection.requestMethod = "GET"
@@ -50,9 +58,25 @@ suspend fun fetchSensorData(baseUrl: String): SensorData? = withContext(Dispatch
         if (connection.responseCode == 200) {
             val response = connection.inputStream.bufferedReader().readText()
             val json = JSONObject(response)
-            SensorData(
-                temperatureC = json.getDouble("temperature_c"),
-                humidityPct = json.getDouble("humidity_pct"),
+            
+            val sensorsArray = json.getJSONArray("sensors")
+            val sensorsList = mutableListOf<SensorReading>()
+            
+            for (i in 0 until sensorsArray.length()) {
+                val sensorObj = sensorsArray.getJSONObject(i)
+                sensorsList.add(
+                    SensorReading(
+                        id = sensorObj.getString("id"),
+                        busNum = sensorObj.getInt("bus_num"),
+                        address = sensorObj.getString("address"),
+                        temperatureC = sensorObj.getDouble("temperature_c"),
+                        humidityPct = sensorObj.getDouble("humidity_pct")
+                    )
+                )
+            }
+            
+            SensorBundle(
+                sensors = sensorsList,
                 timestamp = json.getString("timestamp")
             )
         } else {
@@ -66,13 +90,13 @@ suspend fun fetchSensorData(baseUrl: String): SensorData? = withContext(Dispatch
 
 @Composable
 fun SensorDataScreen(modifier: Modifier = Modifier) {
-    var sensorData by remember { mutableStateOf<SensorData?>(null) }
+    var sensorBundle by remember { mutableStateOf<SensorBundle?>(null) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     val coroutineScope = rememberCoroutineScope()
     
     // This will need to be changed, just the local ip address got from ipconfig on windows.
-    val serverUrl = "http://132.205.95.30:8000"
+    val serverUrl = "http://172.30.109.101:8000"
 
     fun loadData() {
         coroutineScope.launch {
@@ -80,7 +104,7 @@ fun SensorDataScreen(modifier: Modifier = Modifier) {
             errorMessage = null
             val data = fetchSensorData(serverUrl)
             if (data != null) {
-                sensorData = data
+                sensorBundle = data
             } else {
                 errorMessage = "Failed to load sensor data"
             }
@@ -95,38 +119,64 @@ fun SensorDataScreen(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.Center,
+            .padding(16.dp)
+            .verticalScroll(rememberScrollState()),
+        verticalArrangement = if (sensorBundle == null) Arrangement.Center else Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        if (isLoading) {
+        if (isLoading && sensorBundle == null) {
             CircularProgressIndicator()
             Spacer(modifier = Modifier.height(16.dp))
             Text("Loading sensor data...")
-        } else if (errorMessage != null) {
+        } else if (errorMessage != null && sensorBundle == null) {
             Text(text = errorMessage ?: "", color = MaterialTheme.colorScheme.error)
             Spacer(modifier = Modifier.height(16.dp))
             Button(onClick = { loadData() }) {
                 Text("Retry")
             }
-        } else if (sensorData != null) {
+        } else if (sensorBundle != null) {
             Text(
                 text = "Sensor Readings",
                 style = MaterialTheme.typography.headlineMedium
             )
+            Text(
+                text = "Last Updated: ${sensorBundle!!.timestamp}",
+                style = MaterialTheme.typography.bodySmall
+            )
             Spacer(modifier = Modifier.height(16.dp))
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Temperature: ${sensorData!!.temperatureC} °C", style = MaterialTheme.typography.bodyLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Humidity: ${sensorData!!.humidityPct} %", style = MaterialTheme.typography.bodyLarge)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Last Updated: ${sensorData!!.timestamp}", style = MaterialTheme.typography.bodySmall)
+            
+            sensorBundle!!.sensors.forEach { sensor ->
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text(
+                            text = "Sensor: ${sensor.id}", 
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Text(
+                            text = "Bus: ${sensor.busNum} | Address: ${sensor.address}", 
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Temperature: ${sensor.temperatureC} °C", 
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Humidity: ${sensor.humidityPct} %", 
+                            style = MaterialTheme.typography.bodyLarge
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.height(12.dp))
             }
-            Spacer(modifier = Modifier.height(16.dp))
-            Button(onClick = { loadData() }) {
-                Text("Refresh")
+            
+            Spacer(modifier = Modifier.height(8.dp))
+            Button(
+                onClick = { loadData() },
+                enabled = !isLoading
+            ) {
+                Text(if (isLoading) "Refreshing..." else "Refresh")
             }
         }
     }
