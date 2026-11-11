@@ -83,3 +83,60 @@ Examples:
 - `SENSOR_BUSES=1` and `SENSOR_ADDRESSES=0x44,0x45` -> `(1,0x44), (1,0x45)`
 - `SENSOR_BUSES=1,0` and `SENSOR_ADDRESSES=0x44` -> `(1,0x44), (0,0x44)`
 - `SENSOR_BUSES=1,0` and `SENSOR_ADDRESSES=0x44,0x45` -> `(1,0x44), (0,0x45)`
+
+## Firebase (Cloud Firestore, optional)
+
+When credentials are configured, the backend uploads every poll to Cloud
+Firestore. Without credentials it still serves the local API and simply skips
+cloud uploads, so fake mode and offline development keep working.
+
+### Setup
+
+1. Create/select a project in the [Firebase console](https://console.firebase.google.com/)
+   and enable **Cloud Firestore**.
+2. Go to **Project settings -> Service accounts -> Generate new private key**.
+3. Save the JSON file outside the repository, for example
+   `/etc/coen390/firebase-service-account.json`. Never commit it.
+4. Export the credentials and start the backend:
+
+```bash
+export FIREBASE_CREDENTIALS=/etc/coen390/firebase-service-account.json
+export FIREBASE_PROJECT_ID=your-firebase-project-id
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+### Firestore layout
+
+Each sensor gets its own document plus a measurements subcollection:
+
+```text
+sensors/{sensor_id}
+    id, bus_num, address, temperature_c, humidity_pct,
+    timestamp, updated_at
+
+sensors/{sensor_id}/measurements/{measurement_id}
+    sensor_id, bus_num, address, temperature_c, humidity_pct,
+    timestamp, uploaded_at
+```
+
+- `timestamp` is when the Pi recorded the reading (UTC).
+- `updated_at` / `uploaded_at` are Firestore server timestamps.
+
+Android can read the sensor document for the latest value, or query the
+`measurements` subcollection for history.
+
+### Firebase environment variables
+
+- `FIREBASE_ENABLED` - `true` by default; set `false` to disable uploads.
+- `FIREBASE_CREDENTIALS` - path to a service account JSON file.
+  `GOOGLE_APPLICATION_CREDENTIALS` is also accepted.
+- `FIREBASE_PROJECT_ID` - optional project override; if set without a credentials
+  file, application default credentials are used.
+- `FIREBASE_SENSORS_COLLECTION` - top-level collection name (default: `sensors`).
+- `FIREBASE_MEASUREMENTS_SUBCOLLECTION` - history subcollection (default:
+  `measurements`).
+- `FIREBASE_MAX_ATTEMPTS` - upload attempts per poll (default: `3`).
+- `FIREBASE_RETRY_BACKOFF_S` - base retry delay in seconds (default: `0.5`).
+
+If Firebase is not configured or an upload fails after all retries, the error is
+logged and the sensor API continues serving readings.

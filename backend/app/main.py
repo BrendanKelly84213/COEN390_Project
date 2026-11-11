@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from .firebase_store import FirebaseStore
 from .sht31 import read_all_sensors
 
 log = logging.getLogger("sensor-api")
@@ -31,7 +32,7 @@ async def poll_loop(app: FastAPI):
     while True:
         try:
             readings = await asyncio.to_thread(read_all_sensors)
-            app.state.latest = SensorBundle(
+            bundle = SensorBundle(
                 sensors=[
                     SensorReading(
                         id=item["id"],
@@ -44,17 +45,39 @@ async def poll_loop(app: FastAPI):
                 ],
                 timestamp=datetime.now(timezone.utc),
             )
+            app.state.latest = bundle
         except Exception:
             log.exception("Sensor read failed")
+        else:
+            firebase = getattr(app.state, "firebase", None)
+            if firebase is not None and firebase.enabled:
+                try:
+                    uploaded = await asyncio.to_thread(
+                        firebase.upload_measurements, readings, bundle.timestamp
+                    )
+                    if not uploaded:
+                        log.warning(
+                            "Firebase upload failed; local API is unaffected"
+                        )
+                except Exception:
+                    log.exception("Unexpected Firebase upload error")
+
         await asyncio.sleep(POLL_INTERVAL_S)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.latest = None
+    app.state.firebase = FirebaseStore.from_env()
     task = asyncio.create_task(poll_loop(app))
-    yield
-    task.cancel()
+    try:
+        yield
+    finally:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="Sensor API", version="1.0.0", lifespan=lifespan)

@@ -1,0 +1,249 @@
+"""Firebase Firestore uploads for sensor measurements.
+
+The backend runs fine without Firebase. Cloud upload is enabled only when
+credentials are configured; upload failures are logged and never stop the
+local sensor API.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+log = logging.getLogger("firebase")
+
+_DISABLED_VALUES = {"0", "false", "no", "off"}
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in _DISABLED_VALUES
+
+
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        log.warning("Invalid %s=%r; using %d", name, raw, default)
+        return default
+    return max(minimum, value)
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        log.warning("Invalid %s=%r; using %.1f", name, raw, default)
+        return default
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+class FirebaseStore:
+    """Writes each sensor's readings to Firestore.
+
+    Firestore layout::
+
+        sensors/{sensor_id}                     # latest reading
+        sensors/{sensor_id}/measurements/{id}   # historical readings
+    """
+
+    def __init__(
+        self,
+        client: Any | None,
+        firestore_module: Any | None = None,
+        *,
+        sensors_collection: str = "sensors",
+        measurements_subcollection: str = "measurements",
+        max_attempts: int = 3,
+        retry_backoff_s: float = 0.5,
+    ) -> None:
+        self._client = client
+        self._sensors_collection = sensors_collection
+        self._measurements_subcollection = measurements_subcollection
+        self._max_attempts = max(1, max_attempts)
+        self._retry_backoff_s = max(0.0, retry_backoff_s)
+        self._server_timestamp = (
+            firestore_module.SERVER_TIMESTAMP if firestore_module is not None else None
+        )
+
+    @property
+    def enabled(self) -> bool:
+        return self._client is not None
+
+    @classmethod
+    def from_env(cls) -> "FirebaseStore":
+        """Build a store from environment variables.
+
+        If Firebase is disabled or misconfigured, returns a disabled store so
+        the local API keeps working.
+        """
+        sensors_collection = (
+            os.getenv("FIREBASE_SENSORS_COLLECTION", "sensors").strip() or "sensors"
+        )
+        measurements_subcollection = (
+            os.getenv("FIREBASE_MEASUREMENTS_SUBCOLLECTION", "measurements").strip()
+            or "measurements"
+        )
+        options = dict(
+            sensors_collection=sensors_collection,
+            measurements_subcollection=measurements_subcollection,
+            max_attempts=_env_int("FIREBASE_MAX_ATTEMPTS", 3),
+            retry_backoff_s=_env_float("FIREBASE_RETRY_BACKOFF_S", 0.5),
+        )
+
+        if not _env_bool("FIREBASE_ENABLED", True):
+            log.info("Firebase upload disabled (FIREBASE_ENABLED=false)")
+            return cls(None, **options)
+
+        credentials_path = (
+            os.getenv("FIREBASE_CREDENTIALS")
+            or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            or ""
+        ).strip()
+        project_id = (os.getenv("FIREBASE_PROJECT_ID") or "").strip()
+
+        if not credentials_path and not project_id:
+            log.info(
+                "Firebase upload disabled: set FIREBASE_CREDENTIALS to a service "
+                "account JSON file (or FIREBASE_PROJECT_ID to use application "
+                "default credentials)"
+            )
+            return cls(None, **options)
+
+        if credentials_path and not os.path.isfile(credentials_path):
+            log.error(
+                "Firebase upload disabled: credentials file not found: %s",
+                credentials_path,
+            )
+            return cls(None, **options)
+
+        try:
+            import firebase_admin
+            from firebase_admin import credentials, firestore
+        except ImportError:
+            log.warning(
+                "Firebase upload disabled: firebase-admin is not installed "
+                "(pip install -r requirements.txt)"
+            )
+            return cls(None, **options)
+
+        try:
+            if credentials_path:
+                credential = credentials.Certificate(credentials_path)
+            else:
+                # Let firebase-admin use application default credentials.
+                credential = None
+
+            app_options = {"projectId": project_id} if project_id else None
+            try:
+                app = firebase_admin.get_app()
+            except ValueError:
+                app = firebase_admin.initialize_app(credential, app_options)
+
+            client = firestore.client(app=app)
+        except Exception:
+            log.exception("Firebase upload disabled: client initialisation failed")
+            return cls(None, **options)
+
+        log.info(
+            "Firebase upload enabled (project=%s, collection=%s, measurements=%s)",
+            getattr(app, "project_id", project_id or "unknown"),
+            sensors_collection,
+            measurements_subcollection,
+        )
+        return cls(client, firestore, **options)
+
+    def upload_measurements(
+        self, sensors: list[dict[str, Any]], timestamp: datetime
+    ) -> bool:
+        """Upload one reading per sensor.
+
+        Returns True if the Firestore batch committed, False if uploads are
+        disabled or all retry attempts failed.
+        """
+        if not self.enabled:
+            return False
+        if not sensors:
+            return True
+
+        recorded_at = _as_utc(timestamp)
+        for attempt in range(1, self._max_attempts + 1):
+            try:
+                self._write_batch(sensors, recorded_at)
+                return True
+            except Exception:
+                if attempt >= self._max_attempts:
+                    log.exception(
+                        "Firebase upload failed after %d attempt(s); %d reading(s) dropped",
+                        attempt,
+                        len(sensors),
+                    )
+                    return False
+
+                delay = self._retry_backoff_s * (2 ** (attempt - 1))
+                log.warning(
+                    "Firebase upload attempt %d/%d failed; retrying in %.1fs",
+                    attempt,
+                    self._max_attempts,
+                    delay,
+                )
+                if delay:
+                    time.sleep(delay)
+
+        return False
+
+    def _write_batch(self, sensors: list[dict[str, Any]], recorded_at: datetime) -> None:
+        batch = self._client.batch()
+        upload_time = self._server_timestamp
+
+        for sensor in sensors:
+            sensor_id = str(sensor["id"])
+            reading = {
+                "sensor_id": sensor_id,
+                "bus_num": sensor["bus_num"],
+                "address": sensor["address"],
+                "temperature_c": sensor["temperature_c"],
+                "humidity_pct": sensor["humidity_pct"],
+                "timestamp": recorded_at,
+                "uploaded_at": upload_time,
+            }
+
+            sensor_ref = self._client.collection(self._sensors_collection).document(
+                sensor_id
+            )
+            batch.set(
+                sensor_ref.collection(self._measurements_subcollection).document(),
+                reading,
+            )
+            # Keep the latest reading on the sensor document for cheap reads.
+            batch.set(
+                sensor_ref,
+                {
+                    "id": sensor_id,
+                    "bus_num": sensor["bus_num"],
+                    "address": sensor["address"],
+                    "temperature_c": sensor["temperature_c"],
+                    "humidity_pct": sensor["humidity_pct"],
+                    "timestamp": recorded_at,
+                    "updated_at": upload_time,
+                },
+                merge=True,
+            )
+
+        batch.commit()
