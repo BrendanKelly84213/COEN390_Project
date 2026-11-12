@@ -83,3 +83,102 @@ Examples:
 - `SENSOR_BUSES=1` and `SENSOR_ADDRESSES=0x44,0x45` -> `(1,0x44), (1,0x45)`
 - `SENSOR_BUSES=1,0` and `SENSOR_ADDRESSES=0x44` -> `(1,0x44), (0,0x44)`
 - `SENSOR_BUSES=1,0` and `SENSOR_ADDRESSES=0x44,0x45` -> `(1,0x44), (0,0x45)`
+
+## Firebase (Cloud Firestore)
+
+Firebase is already configured for this project. Cloud upload is optional: the
+backend serves the local API whether or not Firebase credentials are set.
+
+### Run with Firebase
+
+Set the service-account path and project ID, then start the backend:
+
+```bash
+cd backend
+source .venv/bin/activate
+
+export FIREBASE_CREDENTIALS=/etc/coen390/firebase-service-account.json
+export FIREBASE_PROJECT_ID=your-firebase-project-id
+uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+If application default credentials are already configured, setting
+`FIREBASE_PROJECT_ID` alone is enough. The service-account file must not be
+committed to the repository.
+
+### Run without Firebase
+
+Leave `FIREBASE_CREDENTIALS` and `FIREBASE_PROJECT_ID` unset, or disable uploads
+explicitly:
+
+```bash
+cd backend
+source .venv/bin/activate
+FIREBASE_ENABLED=false uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+With no credentials, uploads are skipped automatically. The local API keeps
+serving readings, and upload failures are logged without stopping polling.
+
+### Firestore layout
+
+Each sensor gets its own document plus a measurements subcollection:
+
+```text
+sensors/{sensor_id}
+    id, bus_num, address, temperature_c, humidity_pct,
+    timestamp, updated_at
+
+sensors/{sensor_id}/measurements/{measurement_id}
+    sensor_id, bus_num, address, temperature_c, humidity_pct,
+    timestamp, uploaded_at
+```
+
+- `timestamp` is when the Pi recorded the reading (UTC).
+- `updated_at` / `uploaded_at` are Firestore server timestamps.
+
+Android can read the sensor document for the latest value, or query the
+`measurements` subcollection for history.
+
+### Firebase environment variables
+
+- `FIREBASE_ENABLED` - `true` by default; set `false` to disable uploads.
+- `FIREBASE_CREDENTIALS` - path to a service account JSON file.
+  `GOOGLE_APPLICATION_CREDENTIALS` is also accepted.
+- `FIREBASE_PROJECT_ID` - optional project override; if set without a credentials
+  file, application default credentials are used.
+- `FIREBASE_SENSORS_COLLECTION` - top-level collection name (default: `sensors`).
+- `FIREBASE_MEASUREMENTS_SUBCOLLECTION` - history subcollection (default:
+  `measurements`).
+- `FIREBASE_MAX_ATTEMPTS` - upload attempts per poll (default: `3`).
+- `FIREBASE_RETRY_BACKOFF_S` - base retry delay in seconds (default: `0.5`).
+
+If Firebase is not configured or an upload fails after all retries, the error is
+logged and the sensor API continues serving readings.
+
+## Android app (Firestore)
+
+The Android app reads Cloud Firestore directly. It does not poll the Pi's HTTP
+API.
+
+### Run
+
+1. Make sure `android/app/google-services.json` is present. It is git-ignored,
+   so use the project's copy.
+2. Open the `android/` directory in Android Studio, sync Gradle, and run the app.
+
+The Google Services Gradle plugin is applied when that file exists. Without it,
+the app still builds but shows a configuration message. Use
+`google-services.json` for the app; keep the Pi's service-account JSON on the
+server.
+
+The deployed [`firestore.rules`](firestore.rules) allow client reads and deny
+client writes; the Pi writes with the Admin SDK.
+
+### What the app shows
+
+- Latest reading for every sensor from the `sensors` collection.
+- Tap a sensor card to load the newest 20 entries from
+  `sensors/{sensor_id}/measurements`.
+- Firestore snapshot listeners update the screen automatically as the Pi
+  uploads new readings.

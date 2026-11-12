@@ -2,3 +2,4 @@ fastapi
 uvicorn[standard]
 click<8.3
 smbus2
+firebase-admin

@@ -1,0 +1,21 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The Raspberry Pi writes with the Firebase Admin SDK, which bypasses
+    // these rules. The Android app only needs read access.
+    //
+    // This allows public reads so the app works without authentication.
+    // Add Firebase Auth and tighten `allow read` before collecting anything
+    // sensitive (equipment control, alerts, etc.).
+    match /sensors/{sensorId} {
+      allow read: if true;
+      allow write: if false;
+
+      match /measurements/{measurementId} {
+        allow read: if true;
+        allow write: if false;
+      }
+    }
+  }
+}
