@@ -84,26 +84,41 @@ Examples:
 - `SENSOR_BUSES=1,0` and `SENSOR_ADDRESSES=0x44` -> `(1,0x44), (0,0x44)`
 - `SENSOR_BUSES=1,0` and `SENSOR_ADDRESSES=0x44,0x45` -> `(1,0x44), (0,0x45)`
 
-## Firebase (Cloud Firestore, optional)
+## Firebase (Cloud Firestore)
 
-When credentials are configured, the backend uploads every poll to Cloud
-Firestore. Without credentials it still serves the local API and simply skips
-cloud uploads, so fake mode and offline development keep working.
+Firebase is already configured for this project. Cloud upload is optional: the
+backend serves the local API whether or not Firebase credentials are set.
 
-### Setup
+### Run with Firebase
 
-1. Create/select a project in the [Firebase console](https://console.firebase.google.com/)
-   and enable **Cloud Firestore**.
-2. Go to **Project settings -> Service accounts -> Generate new private key**.
-3. Save the JSON file outside the repository, for example
-   `/etc/coen390/firebase-service-account.json`. Never commit it.
-4. Export the credentials and start the backend:
+Set the service-account path and project ID, then start the backend:
 
 ```bash
+cd backend
+source .venv/bin/activate
+
 export FIREBASE_CREDENTIALS=/etc/coen390/firebase-service-account.json
 export FIREBASE_PROJECT_ID=your-firebase-project-id
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
+
+If application default credentials are already configured, setting
+`FIREBASE_PROJECT_ID` alone is enough. The service-account file must not be
+committed to the repository.
+
+### Run without Firebase
+
+Leave `FIREBASE_CREDENTIALS` and `FIREBASE_PROJECT_ID` unset, or disable uploads
+explicitly:
+
+```bash
+cd backend
+source .venv/bin/activate
+FIREBASE_ENABLED=false uvicorn app.main:app --host 0.0.0.0 --port 8000
+```
+
+With no credentials, uploads are skipped automatically. The local API keeps
+serving readings, and upload failures are logged without stopping polling.
 
 ### Firestore layout
 
@@ -143,30 +158,22 @@ logged and the sensor API continues serving readings.
 
 ## Android app (Firestore)
 
-The Android app reads Cloud Firestore directly. It no longer polls the Pi's
-HTTP API.
+The Android app reads Cloud Firestore directly. It does not poll the Pi's HTTP
+API.
 
-### Required config: `google-services.json`
+### Run
 
-The Pi's `service-account.json` is a **server-side secret** and must not be
-added to the Android project. The app needs the public Firebase client config:
+1. Make sure `android/app/google-services.json` is present. It is git-ignored,
+   so use the project's copy.
+2. Open the `android/` directory in Android Studio, sync Gradle, and run the app.
 
-1. Firebase console -> **Project settings -> Your apps -> Add app -> Android**.
-2. Use package name `com.example.frontend`.
-3. Download `google-services.json`.
-4. Place it at `android/app/google-services.json`.
-5. Sync Gradle and run the app.
+The Google Services Gradle plugin is applied when that file exists. Without it,
+the app still builds but shows a configuration message. Use
+`google-services.json` for the app; keep the Pi's service-account JSON on the
+server.
 
-`google-services.json` is git-ignored. The Google Services Gradle plugin is
-applied only when that file exists, so the project still builds before Firebase
-is configured; the app then shows setup instructions instead of crashing.
-
-### Firestore rules
-
-Deploy [`firestore.rules`](firestore.rules), or paste it into
-**Firebase console -> Firestore -> Rules**. The rules allow the Android app to
-read and deny client writes. The Pi's Admin SDK bypasses these rules, so the
-backend can still write.
+The deployed [`firestore.rules`](firestore.rules) allow client reads and deny
+client writes; the Pi writes with the Admin SDK.
 
 ### What the app shows
 
