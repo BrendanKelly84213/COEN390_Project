@@ -140,3 +140,38 @@ Android can read the sensor document for the latest value, or query the
 
 If Firebase is not configured or an upload fails after all retries, the error is
 logged and the sensor API continues serving readings.
+
+## Android app (Firestore)
+
+The Android app reads Cloud Firestore directly. It no longer polls the Pi's
+HTTP API.
+
+### Required config: `google-services.json`
+
+The Pi's `service-account.json` is a **server-side secret** and must not be
+added to the Android project. The app needs the public Firebase client config:
+
+1. Firebase console -> **Project settings -> Your apps -> Add app -> Android**.
+2. Use package name `com.example.frontend`.
+3. Download `google-services.json`.
+4. Place it at `android/app/google-services.json`.
+5. Sync Gradle and run the app.
+
+`google-services.json` is git-ignored. The Google Services Gradle plugin is
+applied only when that file exists, so the project still builds before Firebase
+is configured; the app then shows setup instructions instead of crashing.
+
+### Firestore rules
+
+Deploy [`firestore.rules`](firestore.rules), or paste it into
+**Firebase console -> Firestore -> Rules**. The rules allow the Android app to
+read and deny client writes. The Pi's Admin SDK bypasses these rules, so the
+backend can still write.
+
+### What the app shows
+
+- Latest reading for every sensor from the `sensors` collection.
+- Tap a sensor card to load the newest 20 entries from
+  `sensors/{sensor_id}/measurements`.
+- Firestore snapshot listeners update the screen automatically as the Pi
+  uploads new readings.
