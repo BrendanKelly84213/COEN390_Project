@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from .alerts import AlertMonitor
 from .firebase_store import FirebaseStore
 from .sht31 import read_all_sensors
 
@@ -52,10 +53,30 @@ async def poll_loop(app: FastAPI):
             firebase = getattr(app.state, "firebase", None)
             if firebase is not None and firebase.enabled:
                 try:
-                    uploaded = await asyncio.to_thread(
-                        firebase.upload_measurements, readings, bundle.timestamp
+                    thresholds = await asyncio.to_thread(
+                        firebase.get_alert_thresholds
                     )
-                    if not uploaded:
+                    alerts = []
+                    active_keys = None
+                    if thresholds is not None:
+                        alerts, active_keys = app.state.alert_monitor.evaluate(
+                            readings, thresholds, bundle.timestamp
+                        )
+
+                    uploaded = await asyncio.to_thread(
+                        firebase.upload_measurements,
+                        readings,
+                        bundle.timestamp,
+                        alerts,
+                    )
+                    if uploaded:
+                        if active_keys is not None:
+                            app.state.alert_monitor.mark_published(
+                                active_keys, alerts, bundle.timestamp
+                            )
+                        if alerts:
+                            log.info("Published %d alert(s) to Firestore", len(alerts))
+                    else:
                         log.warning(
                             "Firebase upload failed; local API is unaffected"
                         )
@@ -69,6 +90,7 @@ async def poll_loop(app: FastAPI):
 async def lifespan(app: FastAPI):
     app.state.latest = None
     app.state.firebase = FirebaseStore.from_env()
+    app.state.alert_monitor = AlertMonitor.from_env()
     task = asyncio.create_task(poll_loop(app))
     try:
         yield
