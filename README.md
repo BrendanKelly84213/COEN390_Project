@@ -266,13 +266,17 @@ the app still builds but shows a configuration message. Use
 `google-services.json` for the app; keep the Pi's service-account JSON on the
 server.
 
-The deployed [`firestore.rules`](firestore.rules) allow client reads and deny
-client writes; the Pi writes with the Admin SDK.
+The deployed [`firestore.rules`](firestore.rules) allow client reads for
+sensors, measurements, and alerts, and deny client writes; the Pi writes with
+the Admin SDK. Deploy the updated rules before running the app, otherwise the
+`alerts` listener will show a permission error.
 
 ### What the app shows
 
 - Latest reading for every sensor from the `sensors` collection.
+- The newest 20 alert documents from the top-level `alerts` collection,
+  including the alert type, sensor, reading, threshold, message, and timestamp.
 - Tap a sensor card to load the newest 20 entries from
   `sensors/{sensor_id}/measurements`.
 - Firestore snapshot listeners update the screen automatically as the Pi
-  uploads new readings.
+  uploads new readings or alerts.
