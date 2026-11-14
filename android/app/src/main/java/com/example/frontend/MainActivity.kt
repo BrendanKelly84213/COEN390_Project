@@ -1,7 +1,10 @@
 package com.example.frontend
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
 
 =======
+=======
+>>>>>>> Stashed changes
 //Should just be for intializing the document
 import android.Manifest
 import android.content.pm.PackageManager
