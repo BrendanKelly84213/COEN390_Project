@@ -1,5 +1,12 @@
 package com.example.frontend
+<<<<<<< Updated upstream
 
+=======
+//Should just be for intializing the document
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+>>>>>>> Stashed changes
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,6 +31,14 @@ import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+<<<<<<< Updated upstream
+=======
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // Alerts still appear in the app whdsen notifications are denied.
+        }
+
+>>>>>>> Stashed changes
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
