@@ -7,7 +7,7 @@ service cloud.firestore {
     //
     // This allows public reads so the app works without authentication.
     // Add Firebase Auth and tighten `allow read` before collecting anything
-    // sensitive (equipment control, alerts, etc.).
+    // sensitive (for example equipment control).
     match /sensors/{sensorId} {
       allow read: if true;
       allow write: if false;
@@ -16,6 +16,13 @@ service cloud.firestore {
         allow read: if true;
         allow write: if false;
       }
+    }
+
+    // Alerts are published by the Pi and read by the app. Clients cannot
+    // create or modify them.
+    match /alerts/{alertId} {
+      allow read: if true;
+      allow write: if false;
     }
   }
 }

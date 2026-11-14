@@ -13,6 +13,8 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
+from .alerts import Alert, AlertThresholds
+
 log = logging.getLogger("firebase")
 
 _DISABLED_VALUES = {"0", "false", "no", "off"}
@@ -55,12 +57,14 @@ def _as_utc(value: datetime) -> datetime:
 
 
 class FirebaseStore:
-    """Writes each sensor's readings to Firestore.
+    """Writes sensor readings and alerts to Firestore.
 
     Firestore layout::
 
         sensors/{sensor_id}                     # latest reading
         sensors/{sensor_id}/measurements/{id}   # historical readings
+        alerts/{alert_id}                       # threshold violations
+        settings/alerts                         # user-defined thresholds
     """
 
     def __init__(
@@ -70,12 +74,20 @@ class FirebaseStore:
         *,
         sensors_collection: str = "sensors",
         measurements_subcollection: str = "measurements",
+        alerts_collection: str = "alerts",
+        alert_thresholds_document: str = "settings/alerts",
+        alert_thresholds_refresh_s: float = 60.0,
         max_attempts: int = 3,
         retry_backoff_s: float = 0.5,
     ) -> None:
         self._client = client
         self._sensors_collection = sensors_collection
         self._measurements_subcollection = measurements_subcollection
+        self._alerts_collection = alerts_collection
+        self._alert_thresholds_document = alert_thresholds_document
+        self._alert_thresholds_refresh_s = max(0.0, alert_thresholds_refresh_s)
+        self._alert_thresholds: AlertThresholds | None = None
+        self._alert_thresholds_read_at = 0.0
         self._max_attempts = max(1, max_attempts)
         self._retry_backoff_s = max(0.0, retry_backoff_s)
         self._server_timestamp = (
@@ -85,6 +97,14 @@ class FirebaseStore:
     @property
     def enabled(self) -> bool:
         return self._client is not None
+
+    @property
+    def alerts_collection(self) -> str:
+        return self._alerts_collection
+
+    @property
+    def alert_thresholds_document(self) -> str:
+        return self._alert_thresholds_document
 
     @classmethod
     def from_env(cls) -> "FirebaseStore":
@@ -100,9 +120,21 @@ class FirebaseStore:
             os.getenv("FIREBASE_MEASUREMENTS_SUBCOLLECTION", "measurements").strip()
             or "measurements"
         )
+        alerts_collection = (
+            os.getenv("FIREBASE_ALERTS_COLLECTION", "alerts").strip() or "alerts"
+        )
+        alert_thresholds_document = (
+            os.getenv("FIREBASE_ALERT_THRESHOLDS_DOCUMENT", "settings/alerts").strip()
+            or "settings/alerts"
+        )
         options = dict(
             sensors_collection=sensors_collection,
             measurements_subcollection=measurements_subcollection,
+            alerts_collection=alerts_collection,
+            alert_thresholds_document=alert_thresholds_document,
+            alert_thresholds_refresh_s=_env_float(
+                "FIREBASE_ALERT_THRESHOLDS_REFRESH_S", 60.0
+            ),
             max_attempts=_env_int("FIREBASE_MAX_ATTEMPTS", 3),
             retry_backoff_s=_env_float("FIREBASE_RETRY_BACKOFF_S", 0.5),
         )
@@ -162,37 +194,91 @@ class FirebaseStore:
             return cls(None, **options)
 
         log.info(
-            "Firebase upload enabled (project=%s, collection=%s, measurements=%s)",
+            "Firebase upload enabled (project=%s, collection=%s, measurements=%s, "
+            "alerts=%s, thresholds=%s)",
             getattr(app, "project_id", project_id or "unknown"),
             sensors_collection,
             measurements_subcollection,
+            alerts_collection,
+            alert_thresholds_document,
         )
         return cls(client, firestore, **options)
 
+    def get_alert_thresholds(self, *, force: bool = False) -> AlertThresholds | None:
+        """Read the user-defined thresholds from Firestore.
+
+        Returns the last known thresholds when a refresh fails, or None if no
+        thresholds have ever been read. A missing document means "no thresholds
+        configured" rather than an error.
+        """
+        if not self.enabled:
+            return None
+
+        now = time.monotonic()
+        cache_is_fresh = (
+            self._alert_thresholds is not None
+            and now - self._alert_thresholds_read_at
+            < self._alert_thresholds_refresh_s
+        )
+        if not force and cache_is_fresh:
+            return self._alert_thresholds
+
+        try:
+            snapshot = self._alert_thresholds_ref().get()
+            data = snapshot.to_dict() if getattr(snapshot, "exists", False) else None
+            thresholds = AlertThresholds.from_mapping(data)
+        except Exception:
+            log.exception("Could not read alert thresholds from Firestore")
+            return self._alert_thresholds
+
+        self._alert_thresholds = thresholds
+        self._alert_thresholds_read_at = now
+        return thresholds
+
+    def _alert_thresholds_ref(self) -> Any:
+        parts = [part for part in self._alert_thresholds_document.split("/") if part]
+        if len(parts) != 2:
+            raise ValueError(
+                "FIREBASE_ALERT_THRESHOLDS_DOCUMENT must be a "
+                "collection/document path"
+            )
+        return self._client.collection(parts[0]).document(parts[1])
+
+    def upload_alerts(self, alerts: list[Alert], timestamp: datetime) -> bool:
+        """Upload only alert documents (used by the integration test script)."""
+        return self.upload_measurements([], timestamp, alerts)
+
     def upload_measurements(
-        self, sensors: list[dict[str, Any]], timestamp: datetime
+        self,
+        sensors: list[dict[str, Any]],
+        timestamp: datetime,
+        alerts: list[Alert] | None = None,
     ) -> bool:
-        """Upload one reading per sensor.
+        """Upload one reading per sensor and any alerts in the same batch.
 
         Returns True if the Firestore batch committed, False if uploads are
         disabled or all retry attempts failed.
         """
         if not self.enabled:
             return False
-        if not sensors:
+
+        alerts = alerts or []
+        if not sensors and not alerts:
             return True
 
         recorded_at = _as_utc(timestamp)
         for attempt in range(1, self._max_attempts + 1):
             try:
-                self._write_batch(sensors, recorded_at)
+                self._write_batch(sensors, recorded_at, alerts)
                 return True
             except Exception:
                 if attempt >= self._max_attempts:
                     log.exception(
-                        "Firebase upload failed after %d attempt(s); %d reading(s) dropped",
+                        "Firebase upload failed after %d attempt(s); "
+                        "%d reading(s) and %d alert(s) dropped",
                         attempt,
                         len(sensors),
+                        len(alerts),
                     )
                     return False
 
@@ -208,7 +294,12 @@ class FirebaseStore:
 
         return False
 
-    def _write_batch(self, sensors: list[dict[str, Any]], recorded_at: datetime) -> None:
+    def _write_batch(
+        self,
+        sensors: list[dict[str, Any]],
+        recorded_at: datetime,
+        alerts: list[Alert],
+    ) -> None:
         batch = self._client.batch()
         upload_time = self._server_timestamp
 
@@ -244,6 +335,14 @@ class FirebaseStore:
                     "updated_at": upload_time,
                 },
                 merge=True,
+            )
+
+        for alert in alerts:
+            document = alert.to_document()
+            document["created_at"] = upload_time
+            batch.set(
+                self._client.collection(self._alerts_collection).document(),
+                document,
             )
 
         batch.commit()

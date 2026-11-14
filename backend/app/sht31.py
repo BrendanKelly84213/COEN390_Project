@@ -1,11 +1,30 @@
 # sht31.py
+import logging
 import time
 import os
 import random
 
-FAKE = os.getenv("SENSOR_MODE") == "fake"
+log = logging.getLogger("sensors")
 
 CMD_MEASURE = (0x24, 0x00)
+
+DEFAULT_FAKE_ALERT_TEMPERATURE_C = 15.0
+DEFAULT_FAKE_ALERT_HUMIDITY_PCT = 85.0
+
+
+def _sensor_mode() -> str:
+    return (os.getenv("SENSOR_MODE") or "").strip().lower()
+
+
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError:
+        log.warning("Invalid %s=%r; using %.1f", name, raw, default)
+        return default
 
 def _parse_int_list(value: str | None, default: list[int]) -> list[int]:
     if value is None or value.strip() == "":
@@ -34,7 +53,17 @@ def get_sensor_configs() -> list[tuple[int, int]]:
     return [(buses[i], addresses[i]) for i in range(count)]
 
 def sht31_read(bus_num: int, addr: int = 0x44) -> tuple[float, float]:
-    if FAKE:
+    mode = _sensor_mode()
+    if mode == "fake_alert":
+        temp_c = _env_float(
+            "FAKE_ALERT_TEMPERATURE_C", DEFAULT_FAKE_ALERT_TEMPERATURE_C
+        )
+        humidity_pct = _env_float(
+            "FAKE_ALERT_HUMIDITY_PCT", DEFAULT_FAKE_ALERT_HUMIDITY_PCT
+        )
+        return round(temp_c, 2), round(humidity_pct, 2)
+
+    if mode == "fake":
         return round(random.uniform(20, 25), 2), round(random.uniform(40, 60), 2)
 
     from smbus2 import SMBus, i2c_msg
