@@ -1,8 +1,8 @@
-"""Firebase Firestore uploads for sensor measurements.
+"""Firebase Firestore uploads and FCM alert notifications.
 
 The backend runs fine without Firebase. Cloud upload is enabled only when
-credentials are configured; upload failures are logged and never stop the
-local sensor API.
+credentials are configured; upload and notification failures are logged and
+never stop the local sensor API.
 """
 
 from __future__ import annotations
@@ -56,6 +56,14 @@ def _as_utc(value: datetime) -> datetime:
     return value.astimezone(timezone.utc)
 
 
+def _alert_notification_title(alert: Alert) -> str:
+    direction = {
+        "below": "Low",
+        "above": "High",
+    }.get(alert.condition.lower(), alert.condition.capitalize())
+    return f"{direction} {alert.alert_type.lower()} alert".strip()
+
+
 class FirebaseStore:
     """Writes sensor readings and alerts to Firestore.
 
@@ -72,6 +80,9 @@ class FirebaseStore:
         client: Any | None,
         firestore_module: Any | None = None,
         *,
+        app: Any | None = None,
+        messaging_module: Any | None = None,
+        alert_topic: str = "alerts",
         sensors_collection: str = "sensors",
         measurements_subcollection: str = "measurements",
         alerts_collection: str = "alerts",
@@ -81,6 +92,9 @@ class FirebaseStore:
         retry_backoff_s: float = 0.5,
     ) -> None:
         self._client = client
+        self._app = app
+        self._messaging = messaging_module
+        self._alert_topic = alert_topic
         self._sensors_collection = sensors_collection
         self._measurements_subcollection = measurements_subcollection
         self._alerts_collection = alerts_collection
@@ -106,6 +120,10 @@ class FirebaseStore:
     def alert_thresholds_document(self) -> str:
         return self._alert_thresholds_document
 
+    @property
+    def alert_topic(self) -> str:
+        return self._alert_topic
+
     @classmethod
     def from_env(cls) -> "FirebaseStore":
         """Build a store from environment variables.
@@ -127,7 +145,11 @@ class FirebaseStore:
             os.getenv("FIREBASE_ALERT_THRESHOLDS_DOCUMENT", "settings/alerts").strip()
             or "settings/alerts"
         )
+        alert_topic = (
+            os.getenv("FIREBASE_ALERT_TOPIC", "alerts").strip() or "alerts"
+        )
         options = dict(
+            alert_topic=alert_topic,
             sensors_collection=sensors_collection,
             measurements_subcollection=measurements_subcollection,
             alerts_collection=alerts_collection,
@@ -167,7 +189,7 @@ class FirebaseStore:
 
         try:
             import firebase_admin
-            from firebase_admin import credentials, firestore
+            from firebase_admin import credentials, firestore, messaging
         except ImportError:
             log.warning(
                 "Firebase upload disabled: firebase-admin is not installed "
@@ -195,14 +217,21 @@ class FirebaseStore:
 
         log.info(
             "Firebase upload enabled (project=%s, collection=%s, measurements=%s, "
-            "alerts=%s, thresholds=%s)",
+            "alerts=%s, thresholds=%s, topic=%s)",
             getattr(app, "project_id", project_id or "unknown"),
             sensors_collection,
             measurements_subcollection,
             alerts_collection,
             alert_thresholds_document,
+            alert_topic,
         )
-        return cls(client, firestore, **options)
+        return cls(
+            client,
+            firestore,
+            app=app,
+            messaging_module=messaging,
+            **options,
+        )
 
     def get_alert_thresholds(self, *, force: bool = False) -> AlertThresholds | None:
         """Read the user-defined thresholds from Firestore.
@@ -247,6 +276,60 @@ class FirebaseStore:
     def upload_alerts(self, alerts: list[Alert], timestamp: datetime) -> bool:
         """Upload only alert documents (used by the integration test script)."""
         return self.upload_measurements([], timestamp, alerts)
+
+    def send_alert_notifications(self, alerts: list[Alert]) -> int:
+        """Send one FCM notification per alert to the configured topic.
+
+        Push failures are logged but never raise: the alert is already stored in
+        Firestore, so a notification failure must not prevent polling.
+        """
+        if not alerts or not self.enabled or self._messaging is None:
+            return 0
+
+        sent = 0
+        for alert in alerts:
+            message = self._messaging.Message(
+                notification=self._messaging.Notification(
+                    title=_alert_notification_title(alert),
+                    body=alert.message,
+                ),
+                data={
+                    "type": alert.alert_type,
+                    "sensor_id": alert.sensor_id,
+                    "condition": alert.condition,
+                    "value": f"{alert.value:.2f}",
+                    "threshold": f"{alert.threshold:.2f}",
+                    "unit": alert.unit,
+                    "message": alert.message,
+                    "timestamp": alert.timestamp.isoformat(),
+                },
+                topic=self._alert_topic,
+                android=self._messaging.AndroidConfig(
+                    priority="high",
+                    notification=self._messaging.AndroidNotification(
+                        channel_id="alerts",
+                        icon="ic_alert",
+                        color="#B3261E",
+                    ),
+                ),
+            )
+            try:
+                if self._app is not None:
+                    self._messaging.send(message, app=self._app)
+                else:
+                    self._messaging.send(message)
+                sent += 1
+            except Exception:
+                log.exception("Failed to send push notification for %s", alert.key)
+
+        if sent:
+            log.info(
+                "Sent %d push notification(s) to topic %s",
+                sent,
+                self._alert_topic,
+            )
+
+        return sent
 
     def upload_measurements(
         self,

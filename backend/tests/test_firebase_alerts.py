@@ -71,11 +71,47 @@ class FakeClient:
         return FakeBatch(self.documents)
 
 
+class FakeNotification:
+    def __init__(self, title=None, body=None):
+        self.title = title
+        self.body = body
+
+
+class FakeAndroidNotification:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+class FakeAndroidConfig:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+class FakeMessage:
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+
+
+class FakeMessaging:
+    Notification = FakeNotification
+    AndroidNotification = FakeAndroidNotification
+    AndroidConfig = FakeAndroidConfig
+    Message = FakeMessage
+
+    def __init__(self):
+        self.sent = []
+
+    def send(self, message, app=None):
+        self.sent.append((message, app))
+
+
 class FirebaseStoreAlertTests(unittest.TestCase):
     def setUp(self) -> None:
         self.client = FakeClient()
+        self.messaging = FakeMessaging()
         self.store = FirebaseStore(
             self.client,
+            messaging_module=self.messaging,
             alerts_collection="alerts",
             alert_thresholds_document="settings/alerts",
             max_attempts=1,
@@ -154,6 +190,42 @@ class FirebaseStoreAlertTests(unittest.TestCase):
                 path.startswith("sensors/sensor_1/measurements/")
                 for path in self.client.documents
             )
+        )
+
+    def test_sends_push_notification_to_alert_topic(self) -> None:
+        alerts = evaluate_readings(
+            [
+                {
+                    "id": "sensor_1",
+                    "bus_num": 1,
+                    "address": "0x44",
+                    "temperature_c": 19.5,
+                    "humidity_pct": 50.0,
+                }
+            ],
+            AlertThresholds(temperature_min_c=20.0),
+            NOW,
+        )
+
+        sent = self.store.send_alert_notifications(alerts)
+
+        self.assertEqual(sent, 1)
+        message, app = self.messaging.sent[0]
+        self.assertIsNone(app)
+        self.assertEqual(message.kwargs["topic"], "alerts")
+        self.assertEqual(
+            message.kwargs["notification"].title,
+            "Low temperature alert",
+        )
+        self.assertEqual(
+            message.kwargs["notification"].body,
+            "Temperature 19.50 °C is below the configured minimum of 20.00 °C",
+        )
+        self.assertEqual(message.kwargs["data"]["type"], "temperature")
+        self.assertEqual(message.kwargs["data"]["value"], "19.50")
+        self.assertEqual(
+            message.kwargs["android"].kwargs["notification"].kwargs["channel_id"],
+            "alerts",
         )
 
 

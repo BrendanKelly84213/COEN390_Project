@@ -208,6 +208,38 @@ class AlertMonitorTests(unittest.TestCase):
         self.assertEqual(len(retry_alerts), 1)
         self.assertEqual(retry_active, active)
 
+    def test_oscillating_readings_only_alert_on_each_crossing(self) -> None:
+        values = [21, 19, 19, 19, 21, 19]
+        published = 0
+
+        for index, value in enumerate(values):
+            at = NOW + timedelta(seconds=index * 2)
+            alerts, active = self.monitor.evaluate(
+                [reading(float(value), 50.0)], self.thresholds, at
+            )
+            self.monitor.mark_published(active, alerts, at)
+            published += len(alerts)
+
+        self.assertEqual(published, 2)
+
+    def test_zero_repeat_interval_disables_repeat_reminders(self) -> None:
+        monitor = AlertMonitor(repeat_after_s=0)
+
+        alerts, active = monitor.evaluate(
+            [reading(19.0, 50.0)], self.thresholds, NOW
+        )
+        self.assertEqual(len(alerts), 1)
+        monitor.mark_published(active, alerts, NOW)
+
+        later_alerts, later_active = monitor.evaluate(
+            [reading(19.0, 50.0)],
+            self.thresholds,
+            NOW + timedelta(hours=1),
+        )
+
+        self.assertEqual(later_alerts, [])
+        self.assertEqual(later_active, active)
+
 
 if __name__ == "__main__":
     unittest.main()

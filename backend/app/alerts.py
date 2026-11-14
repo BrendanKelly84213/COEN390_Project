@@ -193,12 +193,14 @@ class AlertMonitor:
 
     A new alert is produced when a reading first crosses a threshold. While the
     condition remains true it is repeated at most once every
-    ``ALERT_REPEAT_S`` seconds (default 300). The state is only committed after
-    the corresponding Firestore write succeeds, so failed uploads are retried.
+    ``ALERT_REPEAT_S`` seconds (default 300). Set that value to ``0`` to disable
+    repeat reminders entirely. The state is only committed after the
+    corresponding Firestore write succeeds, so failed uploads are retried.
     """
 
     def __init__(self, repeat_after_s: float = 300.0) -> None:
-        self._repeat_after_s = max(0.0, float(repeat_after_s))
+        repeat_after_s = float(repeat_after_s)
+        self._repeat_after_s = repeat_after_s if repeat_after_s > 0 else None
         self._last_published: dict[AlertKey, datetime] = {}
 
     @classmethod
@@ -230,10 +232,13 @@ class AlertMonitor:
             active.add(key)
 
             last = self._last_published.get(key)
-            elapsed = (
-                (observed_at - last).total_seconds() if last is not None else None
-            )
-            if last is None or elapsed >= self._repeat_after_s:
+            if last is None:
+                alerts.append(alert)
+                continue
+            if self._repeat_after_s is None:
+                continue
+            elapsed = (observed_at - last).total_seconds()
+            if elapsed >= self._repeat_after_s:
                 alerts.append(alert)
 
         return alerts, active

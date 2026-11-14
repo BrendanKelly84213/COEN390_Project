@@ -76,6 +76,18 @@ async def poll_loop(app: FastAPI):
                             )
                         if alerts:
                             log.info("Published %d alert(s) to Firestore", len(alerts))
+                            try:
+                                sent = await asyncio.to_thread(
+                                    firebase.send_alert_notifications,
+                                    alerts,
+                                )
+                                if sent:
+                                    log.info(
+                                        "Sent %d push notification(s)",
+                                        sent,
+                                    )
+                            except Exception:
+                                log.exception("Unexpected push notification error")
                     else:
                         log.warning(
                             "Firebase upload failed; local API is unaffected"

@@ -6,7 +6,7 @@ synthetic reading that violates those thresholds, and prints the alert(s) that
 would be published.
 
 By default nothing is written to Firestore. Pass ``--publish`` to write the
-alert document(s) to the configured alerts collection.
+alert document(s) and send the corresponding FCM push notification(s).
 
 Usage::
 
@@ -194,6 +194,12 @@ def main() -> int:
         f"{store.alerts_collection} collection."
     )
     print("Firebase Console -> Firestore Database -> Data -> alerts")
+
+    sent = store.send_alert_notifications(alerts)
+    print(
+        f"Sent {sent} push notification(s) to the "
+        f"{store.alert_topic} topic."
+    )
     return 0
 
 

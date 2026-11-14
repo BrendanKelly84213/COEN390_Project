@@ -1,9 +1,13 @@
 package com.example.frontend
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -15,18 +19,31 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.example.frontend.data.Measurement
 import com.example.frontend.data.SensorAlert
 import com.example.frontend.data.SensorReading
 import com.example.frontend.data.SensorRepository
+import com.example.frontend.notifications.AlertNotifications
 import com.example.frontend.ui.theme.FrontendTheme
+import com.google.firebase.FirebaseApp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // Alerts still appear in the app when notifications are denied.
+        }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        AlertNotifications.ensureChannel(this)
+        if (FirebaseApp.getApps(this).isNotEmpty()) {
+            AlertNotifications.subscribeToAlerts()
+        }
+        requestNotificationPermission()
         enableEdgeToEdge()
         setContent {
             FrontendTheme {
@@ -34,6 +51,19 @@ class MainActivity : ComponentActivity() {
                     SensorDataScreen(modifier = Modifier.padding(innerPadding))
                 }
             }
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            return
+        }
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS,
+        ) == PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
 }

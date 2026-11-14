@@ -183,10 +183,13 @@ the backend:
 - If the document is missing, no alerts are generated.
 - An alert is written when a reading first crosses a threshold. If the
   condition persists, it is repeated at most once every `ALERT_REPEAT_S`
-  seconds (default `300`). The monitor re-arms when the reading returns to the
-  normal range.
+  seconds (default `300`). Set `ALERT_REPEAT_S=0` to disable repeat reminders.
+  The monitor re-arms when the reading returns to the normal range.
 - Alerts are written in the same Firestore batch as the measurements. If the
   batch fails, both are retried on the next poll.
+- After a successful Firestore batch, each alert is also sent as an FCM push
+  notification to the configured topic (default `alerts`). Notification errors
+  are logged and never stop polling.
 
 There is deliberately no HTTP endpoint for submitting thresholds yet. For now,
 create or edit `settings/alerts` in the Firebase console. The Pi reads it with
@@ -204,11 +207,25 @@ FAKE_ALERT_HUMIDITY_PCT=20 \
 uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
+### Push notifications (FCM)
+
+The Pi sends one FCM notification per published alert through the Firebase
+Admin SDK. The notification includes the alert type, sensor, condition, reading,
+threshold, unit, message, and timestamp as data. Android uses the high-importance
+`alerts` notification channel.
+
+- `FIREBASE_ALERT_TOPIC` sets the FCM topic (default: `alerts`). The Android app
+  subscribes to the same topic at startup.
+- The Android app requests the `POST_NOTIFICATIONS` permission on Android 13+.
+  Accept the prompt to receive alerts outside the app.
+- Keep `google-services.json` on the Android side and the service-account JSON on
+  the Pi. Both are required for push notifications.
+
 ### Test the live Firestore threshold path
 
 Use the integration script to read the real `settings/alerts` document, create
-a reading that violates it, and optionally publish the resulting alert. It is a
-dry run unless `--publish` is passed:
+a reading that violates it, and optionally publish the resulting alert and push
+notification. It is a dry run unless `--publish` is passed:
 
 ```bash
 cd backend
@@ -218,14 +235,15 @@ export FIREBASE_PROJECT_ID=sidwatch-e7f1f
 # Read thresholds and show the alert(s) that would be sent
 python -m scripts.test_firebase_alerts
 
-# Actually write the alert document(s) to Firestore
+# Actually write the alert document(s) and send the push notification(s)
 python -m scripts.test_firebase_alerts --sensor-id sensor_test --publish
 ```
 
 The script prints the thresholds it read and the generated alert details. After
-`--publish`, check **Firebase Console → Firestore Database → Data → `alerts`**.
-Use `--temperature` or `--humidity` to force a specific reading instead of the
-automatic just-outside-the-threshold value.
+`--publish`, check **Firebase Console → Firestore Database → Data → `alerts`**
+and the Android device notification shade. Use `--temperature` or `--humidity`
+to force a specific reading instead of the automatic just-outside-the-threshold
+value.
 
 ### Firebase environment variables
 
@@ -242,8 +260,9 @@ automatic just-outside-the-threshold value.
   `settings/alerts`).
 - `FIREBASE_ALERT_THRESHOLDS_REFRESH_S` - how often to re-read thresholds from
   Firestore, in seconds (default: `60`).
+- `FIREBASE_ALERT_TOPIC` - FCM topic for push notifications (default: `alerts`).
 - `ALERT_REPEAT_S` - how often to repeat an alert while a condition persists, in
-  seconds (default: `300`).
+  seconds (default: `300`). Set to `0` to disable repeat reminders.
 - `FIREBASE_MAX_ATTEMPTS` - upload attempts per poll (default: `3`).
 - `FIREBASE_RETRY_BACKOFF_S` - base retry delay in seconds (default: `0.5`).
 
@@ -260,6 +279,8 @@ API.
 1. Make sure `android/app/google-services.json` is present. It is git-ignored,
    so use the project's copy.
 2. Open the `android/` directory in Android Studio, sync Gradle, and run the app.
+3. On Android 13+, accept the notification permission prompt to receive push
+   alerts.
 
 The Google Services Gradle plugin is applied when that file exists. Without it,
 the app still builds but shows a configuration message. Use
@@ -280,3 +301,6 @@ the Admin SDK. Deploy the updated rules before running the app, otherwise the
   `sensors/{sensor_id}/measurements`.
 - Firestore snapshot listeners update the screen automatically as the Pi
   uploads new readings or alerts.
+- Push notifications for new alerts from the `alerts` FCM topic. The app
+  subscribes at startup, creates the high-importance `alerts` channel, and uses
+  `ic_alert` as the notification icon.
