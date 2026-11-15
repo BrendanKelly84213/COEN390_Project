@@ -1,20 +1,26 @@
+
 package com.example.frontend
 
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.BackHandler
 import androidx.activity.result.contract.ActivityResultContracts
+
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
+import androidx.compose.runtime.*
+
 import androidx.core.content.ContextCompat
-import com.example.frontend.ui.SensorDataScreen
+
 import com.example.frontend.notifications.AlertNotifications
+import com.example.frontend.screens.DashboardScreen
+import com.example.frontend.ui.SensorDataScreen
 import com.example.frontend.ui.theme.FrontendTheme
 import com.google.firebase.FirebaseApp
 
@@ -22,11 +28,11 @@ class MainActivity : ComponentActivity() {
 
     // Requests notification permission from the user.
     private val notificationPermissionLauncher =
-    registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) {
-        // Alerts still appear in the app when notifications are denied.
-    }
+        registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) {
+            // Alerts still appear in the app when notifications are denied.
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -42,15 +48,36 @@ class MainActivity : ComponentActivity() {
 
         enableEdgeToEdge()
 
-        // Display the frontend.
         setContent {
             FrontendTheme {
-                Scaffold(
-                    modifier = Modifier.fillMaxSize()
-                ) { innerPadding ->
-                    SensorDataScreen(
-                        modifier = Modifier.padding(innerPadding)
-                    )
+
+                // Current screen.
+                var currentScreen by remember {
+                    mutableStateOf("dashboard")
+                }
+
+                // Navigate back to the dashboard.
+                BackHandler(
+                    enabled = currentScreen != "dashboard"
+                ) {
+                    currentScreen = "dashboard"
+                }
+
+                when (currentScreen) {
+
+                    "dashboard" -> {
+                        DashboardScreen(
+                            onTerrariumClick = { terrariumId ->
+                                currentScreen = "sensorData"
+                            }
+                        )
+                    }
+
+                    "sensorData" -> {
+                        SensorDataScreen(
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
             }
         }

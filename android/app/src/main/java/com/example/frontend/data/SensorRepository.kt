@@ -1,3 +1,4 @@
+
 package com.example.frontend.data
 
 import com.google.firebase.firestore.DocumentSnapshot
@@ -16,6 +17,7 @@ import com.google.firebase.firestore.Query
 class SensorRepository private constructor(
     private val firestore: FirebaseFirestore,
 ) {
+
     /**
      * Emits the latest reading for every sensor whenever Firestore changes.
      */
@@ -96,11 +98,15 @@ class SensorRepository private constructor(
 
         return SensorReading(
             id = getString("id") ?: documentId,
+            terrariumId = getString("terrarium_id") ?: return null,
             busNum = (get("bus_num") as? Number)?.toInt() ?: 0,
             address = getString("address") ?: "unknown",
             temperatureC = temperature,
             humidityPct = humidity,
-            recordedAt = (getTimestamp("timestamp") ?: getTimestamp("updated_at"))?.toDate(),
+            recordedAt = (
+                    getTimestamp("timestamp")
+                        ?: getTimestamp("updated_at")
+                    )?.toDate()
         )
     }
 
@@ -112,7 +118,10 @@ class SensorRepository private constructor(
             id = id,
             temperatureC = temperature,
             humidityPct = humidity,
-            recordedAt = (getTimestamp("timestamp") ?: getTimestamp("uploaded_at"))?.toDate(),
+            recordedAt = (
+                    getTimestamp("timestamp")
+                        ?: getTimestamp("uploaded_at")
+                    )?.toDate(),
         )
     }
 
@@ -131,7 +140,10 @@ class SensorRepository private constructor(
             threshold = threshold,
             unit = getString("unit").orEmpty(),
             message = getString("message").orEmpty(),
-            recordedAt = (getTimestamp("timestamp") ?: getTimestamp("created_at"))?.toDate(),
+            recordedAt = (
+                    getTimestamp("timestamp")
+                        ?: getTimestamp("created_at")
+                    )?.toDate(),
         )
     }
 
@@ -145,6 +157,7 @@ class SensorRepository private constructor(
         private const val SENSORS_COLLECTION = "sensors"
         private const val MEASUREMENTS_SUBCOLLECTION = "measurements"
         private const val ALERTS_COLLECTION = "alerts"
+
         const val DEFAULT_HISTORY_LIMIT = 20L
         const val DEFAULT_ALERT_LIMIT = 20L
 
@@ -153,6 +166,8 @@ class SensorRepository private constructor(
          * show setup instructions instead of crashing.
          */
         fun create(): SensorRepository? =
-            runCatching { SensorRepository(FirebaseFirestore.getInstance()) }.getOrNull()
+            runCatching {
+                SensorRepository(FirebaseFirestore.getInstance())
+            }.getOrNull()
     }
 }

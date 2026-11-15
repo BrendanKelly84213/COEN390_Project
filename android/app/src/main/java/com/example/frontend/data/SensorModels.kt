@@ -10,6 +10,7 @@ data class SensorReading(
     val temperatureC: Double,
     val humidityPct: Double,
     val recordedAt: Date?,
+    val terrariumId: String = "",
 )
 
 /** One historical document stored at `sensors/{sensorId}/measurements/{id}`. */
