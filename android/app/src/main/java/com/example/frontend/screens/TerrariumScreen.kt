@@ -12,13 +12,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.layout.heightIn
 import com.example.frontend.components.TopBar
 import com.example.frontend.data.SensorReading
 import com.example.frontend.data.SensorRepository
 import com.example.frontend.data.TerrariumRepository
 import com.example.frontend.ui.theme.sageGreen
 import com.example.frontend.ui.theme.FrontendTheme
+import androidx.compose.material3.OutlinedButton
 
 import com.google.firebase.firestore.ListenerRegistration
 
@@ -41,6 +43,30 @@ fun TerrariumScreen(
     }
 
     var errorMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    // All sensors retrieved from Firestore
+    var allSensors by remember {
+        mutableStateOf<List<SensorReading>>(emptyList())
+    }
+
+// Controls the Add Sensors dialog
+    var showAddSensorDialog by remember {
+        mutableStateOf(false)
+    }
+
+// Selected sensors in the dialog
+    var selectedSensorIds by remember {
+        mutableStateOf<Set<String>>(emptySet())
+    }
+
+// Assignment status
+    var assignmentMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    var assignmentError by remember {
         mutableStateOf<String?>(null)
     }
 
@@ -78,6 +104,8 @@ fun TerrariumScreen(
                             readings.map { it.terrariumId }
                         }"
                     )
+
+                    allSensors = readings
 
                     sensors = readings.filter {
                         it.terrariumId == terrariumId
@@ -171,6 +199,23 @@ fun TerrariumScreen(
                 )
             }
 
+            item {
+                Button(
+                    onClick = {
+                        selectedSensorIds = emptySet()
+                        assignmentMessage = null
+                        assignmentError = null
+                        showAddSensorDialog = true
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF2E5939)
+                    )
+                ) {
+                    Text("Add Sensors")
+                }
+            }
+
             // Error message.
             if (errorMessage != null) {
                 item {
@@ -189,66 +234,326 @@ fun TerrariumScreen(
             }
 
             // Sensor cards.
-            items(
-                items = sensors,
-                key = { it.id }
-            ) { sensor ->
+            items(items = sensors, key = { it.id }) { sensor ->
+
+                var showRemoveConfirmation by remember(sensor.id) {
+                    mutableStateOf(false)
+                }
 
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
                     onClick = {
                         onSensorClick(sensor.id)
-                    },
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.surface
-                    )
+                    }
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = sensor.id,
+                            text = "Sensor: ${sensor.id}",
                             style = MaterialTheme.typography.titleMedium
                         )
 
-                        HorizontalDivider()
+                        Text("Temperature: ${sensor.temperatureC} °C")
+                        Text("Humidity: ${sensor.humidityPct} %")
+                        Text("Address: ${sensor.address}")
+                        Text("Bus: ${sensor.busNum}")
 
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
+                        // Remove Sensor button
+                        OutlinedButton(
+                            onClick = {
+                                showRemoveConfirmation = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Temperature")
-                            Text("%.1f °C".format(sensor.temperatureC))
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Humidity")
-                            Text("%.1f %%".format(sensor.humidityPct))
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Address")
-                            Text(sensor.address)
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Text("Bus")
-                            Text(sensor.busNum.toString())
+                            Text("Remove Sensor")
                         }
                     }
                 }
+
+                // Confirmation popup only appears after pressing Remove Sensor
+                if (showRemoveConfirmation) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showRemoveConfirmation = false
+                        },
+                        title = {
+                            Text("Remove Sensor")
+                        },
+                        text = {
+                            Text("Are you sure you want to remove this sensor from the terrarium?")
+                        },
+                        confirmButton = {
+                            TextButton(
+                                onClick = {
+                                    val repository = SensorRepository.create()
+
+                                    repository?.removeSensorFromTerrarium(
+                                        sensorId = sensor.id,
+                                        onSuccess = {
+                                            showRemoveConfirmation = false
+                                        },
+                                        onError = { exception ->
+                                            errorMessage = exception.message
+                                                ?: "Failed to remove sensor"
+                                        }
+                                    )
+                                }
+                            ) {
+                                Text("Remove")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                onClick = {
+                                    showRemoveConfirmation = false
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
             }
         }
+    }
+    // Add Sensors Dialog
+    if (showAddSensorDialog) {
+
+        // Sensors not already assigned to this terrarium
+        val availableSensors = allSensors.filter {
+            it.terrariumId != terrariumId
+        }
+
+        AlertDialog(
+            onDismissRequest = {
+                showAddSensorDialog = false
+            },
+
+            title = {
+                Text("Add Sensors")
+            },
+
+            text = {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+
+                    Text(
+                        text = "Select the sensors you want to add to $terrariumName."
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    if (availableSensors.isEmpty()) {
+
+                        Text(
+                            text = "No additional sensors are available."
+                        )
+
+                    } else {
+
+                        LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 400.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+
+                            items(
+                                items = availableSensors,
+                                key = { it.id }
+                            ) { sensor ->
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+
+                                    Checkbox(
+                                        checked = sensor.id in selectedSensorIds,
+                                        onCheckedChange = { checked ->
+
+                                            selectedSensorIds =
+                                                if (checked) {
+                                                    selectedSensorIds + sensor.id
+                                                } else {
+                                                    selectedSensorIds - sensor.id
+                                                }
+                                        }
+                                    )
+
+                                    Card(
+                                        modifier = Modifier.weight(1f),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                                        )
+                                    ) {
+
+                                        Column(
+                                            modifier = Modifier.padding(12.dp),
+                                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                                        ) {
+
+                                            Text(
+                                                text = sensor.id,
+                                                style = MaterialTheme.typography.titleSmall
+                                            )
+
+                                            HorizontalDivider()
+
+                                            Text(
+                                                text = "Temperature: %.1f °C".format(
+                                                    sensor.temperatureC
+                                                )
+                                            )
+
+                                            Text(
+                                                text = "Humidity: %.1f %%".format(
+                                                    sensor.humidityPct
+                                                )
+                                            )
+
+                                            Text(
+                                                text = "Address: ${sensor.address}"
+                                            )
+
+                                            Text(
+                                                text = "Bus: ${sensor.busNum}"
+                                            )
+
+                                            // Remove sensor button
+                                            var showRemoveConfirmation by remember(sensor.id) {
+                                                mutableStateOf(false)
+                                            }
+
+                                            OutlinedButton(
+                                                onClick = {
+                                                    showRemoveConfirmation = true
+                                                },
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Text("Remove from Terrarium")
+                                            }
+
+// Confirmation dialog
+                                            if (showRemoveConfirmation) {
+                                                AlertDialog(
+                                                    onDismissRequest = {
+                                                        showRemoveConfirmation = false
+                                                    },
+                                                    title = {
+                                                        Text("Remove Sensor")
+                                                    },
+                                                    text = {
+                                                        Text(
+                                                            "Are you sure you want to remove ${sensor.id} from this terrarium?"
+                                                        )
+                                                    },
+                                                    confirmButton = {
+                                                        TextButton(
+                                                            onClick = {
+                                                                val repository = SensorRepository.create()
+
+                                                                repository?.removeSensorFromTerrarium(
+                                                                    sensorId = sensor.id,
+                                                                    onSuccess = {
+                                                                        showRemoveConfirmation = false
+                                                                    },
+                                                                    onError = { exception ->
+                                                                        errorMessage = exception.message
+                                                                    }
+                                                                )
+                                                            }
+                                                        ) {
+                                                            Text("Remove")
+                                                        }
+                                                    },
+                                                    dismissButton = {
+                                                        TextButton(
+                                                            onClick = {
+                                                                showRemoveConfirmation = false
+                                                            }
+                                                        ) {
+                                                            Text("Cancel")
+                                                        }
+                                                    }
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            item {
+                                if (assignmentMessage != null) {
+                                    Text(
+                                        text = assignmentMessage ?: "",
+                                        color = Color(0xFF2E5939)
+                                    )
+                                }
+
+                                if (assignmentError != null) {
+                                    Text(
+                                        text = assignmentError ?: "",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+
+            confirmButton = {
+                Button(
+                    enabled = selectedSensorIds.isNotEmpty(),
+                    onClick = {
+
+                        val repository = SensorRepository.create()
+
+                        if (repository != null) {
+
+                            repository.assignSensorsToTerrarium(
+                                sensorIds = selectedSensorIds.toList(),
+                                terrariumId = terrariumId,
+
+                                onSuccess = {
+                                    assignmentMessage =
+                                        "Sensors successfully added."
+
+                                    showAddSensorDialog = false
+                                },
+
+                                onError = { exception ->
+                                    assignmentError =
+                                        exception.message
+                                            ?: "Unable to assign sensors."
+                                }
+                            )
+
+                        } else {
+                            assignmentError =
+                                "Unable to connect to Firestore."
+                        }
+                    }
+                ) {
+                    Text("Add Selected")
+                }
+            },
+
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddSensorDialog = false
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 

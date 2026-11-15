@@ -11,6 +11,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.foundation.layout.*
+
 import com.example.frontend.data.SensorReading
 import com.example.frontend.ui.theme.sageGreen
 
@@ -19,8 +25,8 @@ fun TerrariumCard(
     terrariumName: String,
     readings: List<SensorReading>,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit,
-    onLivestreamClick: () -> Unit = {}
+    onClick: () -> Unit = {},
+    onDeleteClick: () -> Unit = {}
 ) {
     Card(
         modifier = modifier,
@@ -35,17 +41,36 @@ fun TerrariumCard(
         ) {
 
             // Terrarium title
-            Text(
-                text = terrariumName,
-                style = MaterialTheme.typography.titleMedium
-            )
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = terrariumName,
+                    style = MaterialTheme.typography.titleLarge,
+                    modifier = Modifier.weight(1f)
+                )
+
+                IconButton(
+                    onClick = onDeleteClick,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete Terrarium",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
 
             // Livestream thumbnail
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(110.dp)
-                    .clickable { onLivestreamClick() },
+                    .clickable {  },
                 shape = RoundedCornerShape(12.dp),
                 colors = CardDefaults.cardColors(
                     containerColor = Color(0xFF2E5939)

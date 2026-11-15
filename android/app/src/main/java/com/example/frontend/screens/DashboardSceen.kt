@@ -13,6 +13,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 
+
 import com.example.frontend.components.TopBar
 import com.example.frontend.components.TerrariumCard
 import com.example.frontend.data.SensorReading
@@ -171,31 +172,114 @@ fun DashboardScreen(
 
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+
             items(
                 items = displayedTerrariums,
                 key = { it.id }
             ) { terrarium ->
 
-                // Log the current terrarium
+                var showDeleteConfirmation by remember(terrarium.id) {
+                    mutableStateOf(false)
+                }
+
+                var isDeleting by remember(terrarium.id) {
+                    mutableStateOf(false)
+                }
+
                 Log.d(
                     "DashboardScreen",
                     "Terrarium: ${terrarium.name}, ID: ${terrarium.id}"
                 )
 
-                // Only show sensors belonging to this terrarium
                 val terrariumSensors = displayedSensors.filter {
                     it.terrariumId == terrarium.id
                 }
 
-                TerrariumCard(
-                    terrariumName = terrarium.name,
-                    readings = terrariumSensors,
+                Column(
                     modifier = Modifier.fillMaxWidth(),
-                    onClick = {
-                        onTerrariumClick(terrarium.id)
-                    }
-                )
+                    verticalArrangement = Arrangement.spacedBy(2.dp)
+                ) {
+
+                    // Existing terrarium card
+                    TerrariumCard(
+                        terrariumName = terrarium.name,
+                        readings = terrariumSensors,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onTerrariumClick(terrarium.id)
+                        },
+                        onDeleteClick = {
+                            showDeleteConfirmation = true
+                        }
+                    )
+
+                }
+
+                // Delete confirmation dialog
+                if (showDeleteConfirmation) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            if (!isDeleting) {
+                                showDeleteConfirmation = false
+                            }
+                        },
+                        title = {
+                            Text("Delete Terrarium")
+                        },
+                        text = {
+                            Text(
+                                "Are you sure you want to delete \"${terrarium.name}\"? " +
+                                        "This action cannot be undone."
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(
+                                enabled = !isDeleting,
+                                onClick = {
+                                    isDeleting = true
+
+                                    terrariumRepository.deleteTerrarium(
+                                        terrariumId = terrarium.id,
+                                        onSuccess = {
+                                            isDeleting = false
+                                            showDeleteConfirmation = false
+                                        },
+                                        onError = { exception ->
+                                            isDeleting = false
+                                            errorMessage = exception.message
+                                                ?: "Failed to delete terrarium."
+                                            showDeleteConfirmation = false
+                                        }
+                                    )
+                                }
+                            ) {
+                                if (isDeleting) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        "Delete",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(
+                                enabled = !isDeleting,
+                                onClick = {
+                                    showDeleteConfirmation = false
+                                }
+                            ) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
             }
+
         }
     }
 

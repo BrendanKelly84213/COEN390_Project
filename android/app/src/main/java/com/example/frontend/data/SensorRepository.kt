@@ -5,109 +5,214 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 
-/**
- * Reads the Firestore documents written by the Raspberry Pi backend.
- *
- * The Pi writes `sensors/{sensorId}` (latest reading) and
- * `sensors/{sensorId}/measurements/{id}` (history). The Android client is
- * read-only; Firestore security rules should deny writes from the app.
- */
-class SensorRepository private constructor(
-    private val firestore: FirebaseFirestore,
+class SensorRepository(
+    private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
-    /**
-     * Emits the latest reading for every sensor whenever Firestore changes.
-     */
+
+    // Listen for the latest sensor readings
     fun listenToLatest(
         onUpdate: (List<SensorReading>) -> Unit,
-        onError: (Exception) -> Unit,
-    ): ListenerRegistration =
-        firestore.collection(SENSORS_COLLECTION)
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+
+        return firestore.collection(SENSORS_COLLECTION)
             .addSnapshotListener { snapshot, error ->
+
                 if (error != null) {
                     onError(error)
                     return@addSnapshotListener
                 }
 
                 val readings = snapshot?.documents
-                    .orEmpty()
-                    .mapNotNull { it.toSensorReading() }
-                    .sortedBy { it.id }
+                    ?.mapNotNull { toSensorReading(it) }
+                    ?: emptyList()
 
                 onUpdate(readings)
             }
+    }
 
-    /**
-     * Emits the newest [limit] measurements for one sensor, newest first.
-     */
+    // Listen for historical measurements from a specific sensor
     fun listenToHistory(
         sensorId: String,
-        limit: Long = DEFAULT_HISTORY_LIMIT,
         onUpdate: (List<Measurement>) -> Unit,
-        onError: (Exception) -> Unit,
-    ): ListenerRegistration =
-        firestore.collection(SENSORS_COLLECTION)
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+
+        return firestore.collection(SENSORS_COLLECTION)
             .document(sensorId)
             .collection(MEASUREMENTS_SUBCOLLECTION)
             .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(limit)
+            .limit(DEFAULT_HISTORY_LIMIT)
             .addSnapshotListener { snapshot, error ->
+
                 if (error != null) {
                     onError(error)
                     return@addSnapshotListener
                 }
 
                 val measurements = snapshot?.documents
-                    .orEmpty()
-                    .mapNotNull { it.toMeasurement() }
+                    ?.mapNotNull { toMeasurement(it) }
+                    ?: emptyList()
 
                 onUpdate(measurements)
             }
+    }
 
-    private fun DocumentSnapshot.toSensorReading(): SensorReading? {
-        val temperature = doubleField("temperature_c") ?: return null
-        val humidity = doubleField("humidity_pct") ?: return null
+    // Listen for alerts
+    fun listenToAlerts(
+        onUpdate: (List<SensorAlert>) -> Unit,
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+
+        return firestore.collection(ALERTS_COLLECTION)
+            .orderBy("timestamp", Query.Direction.DESCENDING)
+            .limit(DEFAULT_ALERT_LIMIT)
+            .addSnapshotListener { snapshot, error ->
+
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+
+                val alerts = snapshot?.documents
+                    ?.mapNotNull { toSensorAlert(it) }
+                    ?: emptyList()
+
+                onUpdate(alerts)
+            }
+    }
+
+    // Convert a Firestore sensor document into SensorReading
+    private fun toSensorReading(
+        document: DocumentSnapshot
+    ): SensorReading? {
+
+        val id = document.id
 
         return SensorReading(
             id = id,
-            terrariumId = getString("terrarium_id") ?: return null,
-            busNum = (get("bus_num") as? Number)?.toInt() ?: 0,
-            address = getString("address") ?: "unknown",
-            temperatureC = temperature,
-            humidityPct = humidity,
-            recordedAt = (getTimestamp("timestamp")
-                ?: getTimestamp("updated_at"))?.toDate()
+            terrariumId = document.getString("terrarium_id")
+                ?: return null,
+            busNum = document.getLong("bus_num")?.toInt() ?: 1,
+            address = document.getString("address") ?: "0",
+            temperatureC = doubleField(document, "temperature_c"),
+            humidityPct = doubleField(document, "humidity_pct"),
+            recordedAt = document.getTimestamp("timestamp")?.toDate()
         )
     }
 
-    private fun DocumentSnapshot.toMeasurement(): Measurement? {
-        val temperature = doubleField("temperature_c") ?: return null
-        val humidity = doubleField("humidity_pct") ?: return null
+    // Convert a Firestore measurement document into Measurement
+    private fun toMeasurement(
+        document: DocumentSnapshot
+    ): Measurement {
 
         return Measurement(
-            id = id,
-            temperatureC = temperature,
-            humidityPct = humidity,
-            recordedAt = (getTimestamp("timestamp") ?: getTimestamp("uploaded_at"))?.toDate(),
+            id = document.id,
+            temperatureC = doubleField(document, "temperature_c"),
+            humidityPct = doubleField(document, "humidity_pct"),
+            recordedAt = document.getTimestamp("timestamp")?.toDate()
         )
     }
 
-    private fun DocumentSnapshot.doubleField(name: String): Double? =
-        when (val value = get(name)) {
-            is Number -> value.toDouble()
-            else -> null
+    // Convert a Firestore alert document into SensorAlert
+    private fun toSensorAlert(
+        document: DocumentSnapshot
+    ): SensorAlert? {
+
+        val type = document.getString("type") ?: return null
+        val condition = document.getString("condition") ?: return null
+
+        val value = document.getDouble("value") ?: return null
+        val threshold = document.getDouble("threshold") ?: return null
+
+        return SensorAlert(
+            id = document.id,
+            sensorId = document.getString("sensor_id") ?: "unknown",
+            type = type,
+            condition = condition,
+            value = value,
+            threshold = threshold,
+            unit = document.getString("unit") ?: "",
+            message = document.getString("message") ?: "",
+            recordedAt = (
+                    document.getTimestamp("timestamp")
+                        ?: document.getTimestamp("created_at")
+                    )?.toDate()
+        )
+    }
+
+    // Safely retrieve numeric Firestore fields
+    private fun doubleField(
+        document: DocumentSnapshot,
+        field: String
+    ): Double {
+
+        return document.getDouble(field)
+            ?: document.getLong(field)?.toDouble()
+            ?: 0.0
+    }
+
+    // Assign selected sensors to a terrarium
+    fun assignSensorsToTerrarium(
+        sensorIds: List<String>,
+        terrariumId: String,
+        onSuccess: () -> Unit,
+        onError: (Exception) -> Unit
+    ) {
+        val batch = firestore.batch()
+
+        sensorIds.forEach { sensorId ->
+
+            val sensorReference = firestore
+                .collection(SENSORS_COLLECTION)
+                .document(sensorId)
+
+            batch.update(
+                sensorReference,
+                "terrarium_id",
+                terrariumId
+            )
         }
 
+        batch.commit()
+            .addOnSuccessListener {
+                onSuccess()
+            }
+            .addOnFailureListener { exception ->
+                onError(exception)
+            }
+    }
+
+    // Remove a sensor from its assigned terrarium
+    fun removeSensorFromTerrarium(
+        sensorId: String,
+        onSuccess: () -> Unit,
+        onError: (Exception) -> Unit
+    ) {
+        firestore.collection(SENSORS_COLLECTION)
+            .document(sensorId)
+            .update("terrarium_id", "")
+            .addOnSuccessListener {
+                onSuccess()
+            }
+            .addOnFailureListener { exception ->
+                onError(exception)
+            }
+    }
+
     companion object {
+
         private const val SENSORS_COLLECTION = "sensors"
         private const val MEASUREMENTS_SUBCOLLECTION = "measurements"
-        const val DEFAULT_HISTORY_LIMIT = 20L
+        private const val ALERTS_COLLECTION = "alerts"
 
-        /**
-         * Returns null when Firebase is not configured in the app, so the UI can
-         * show setup instructions instead of crashing.
-         */
-        fun create(): SensorRepository? =
-            runCatching { SensorRepository(FirebaseFirestore.getInstance()) }.getOrNull()
+        private const val DEFAULT_HISTORY_LIMIT = 20L
+        private const val DEFAULT_ALERT_LIMIT = 20L
+
+        fun create(): SensorRepository? {
+            return runCatching {
+                SensorRepository()
+            }.getOrNull()
+        }
     }
 }

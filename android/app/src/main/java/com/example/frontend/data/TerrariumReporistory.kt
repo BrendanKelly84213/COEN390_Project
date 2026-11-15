@@ -113,6 +113,22 @@ class TerrariumRepository(
             }
     }
 
+    fun deleteTerrarium(
+        terrariumId: String,
+        onSuccess: () -> Unit,
+        onError: (Exception) -> Unit
+    ) {
+        firestore.collection("terrariums")
+            .document(terrariumId)
+            .delete()
+            .addOnSuccessListener {
+                onSuccess()
+            }
+            .addOnFailureListener { exception ->
+                onError(exception)
+            }
+    }
+
 
 }
 

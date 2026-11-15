@@ -20,6 +20,9 @@ import com.example.frontend.data.SensorRepository
 import com.example.frontend.ui.theme.sageGreen
 import com.example.frontend.ui.theme.FrontendTheme
 
+import com.example.frontend.data.Measurement
+import java.text.SimpleDateFormat
+import java.util.Locale
 import com.google.firebase.firestore.ListenerRegistration
 
 data class SensorSettings(
@@ -68,14 +71,26 @@ fun SensorScreen(
         mutableStateOf<String?>(null)
     }
 
+    var history by remember(sensorId) {
+        mutableStateOf<List<Measurement>>(emptyList())
+    }
+
+    var historyError by remember {
+        mutableStateOf<String?>(null)
+    }
+
     // Listen for updates to the selected sensor
     DisposableEffect(sensorId) {
-        var listener: ListenerRegistration? = null
+
+        var sensorListener: ListenerRegistration? = null
+        var historyListener: ListenerRegistration? = null
 
         val repository = SensorRepository.create()
 
         if (repository != null) {
-            listener = repository.listenToLatest(
+
+            // Listen for live sensor readings
+            sensorListener = repository.listenToLatest(
                 onUpdate = { readings ->
                     sensor = readings.firstOrNull {
                         it.id == sensorId
@@ -86,12 +101,27 @@ fun SensorScreen(
                     errorMessage = exception.message
                 }
             )
+
+            // Listen for historical measurements
+            historyListener = repository.listenToHistory(
+                sensorId = sensorId,
+                onUpdate = { measurements ->
+                    history = measurements
+                    historyError = null
+                },
+                onError = { exception ->
+                    historyError = exception.message
+                }
+            )
+
         } else {
             errorMessage = "Unable to connect to Firestore."
+            historyError = "Unable to connect to Firestore."
         }
 
         onDispose {
-            listener?.remove()
+            sensorListener?.remove()
+            historyListener?.remove()
         }
     }
 
@@ -173,6 +203,97 @@ fun SensorScreen(
                 Text(
                     text = errorMessage ?: "Loading sensor readings..."
                 )
+            }
+
+            // Sensor History
+            Text(
+                text = "Sensor History",
+                style = MaterialTheme.typography.titleLarge
+            )
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                )
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(12.dp)
+                ) {
+
+                    if (historyError != null) {
+
+                        Text(
+                            text = historyError ?: "Unable to load history.",
+                            color = MaterialTheme.colorScheme.error
+                        )
+
+                    } else if (history.isEmpty()) {
+
+                        Text(
+                            text = "No historical measurements available."
+                        )
+
+                    } else {
+
+                        // Independently scrollable history list
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(240.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+
+                            history.forEach { measurement ->
+
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 6.dp)
+                                ) {
+
+                                    Text(
+                                        text = measurement.recordedAt?.let {
+                                            SimpleDateFormat(
+                                                "MMM dd, yyyy - HH:mm:ss",
+                                                Locale.getDefault()
+                                            ).format(it)
+                                        } ?: "Unknown date",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+
+                                        Text(
+                                            text = "Temperature: %.1f °C".format(
+                                                measurement.temperatureC
+                                            ),
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+
+                                        Text(
+                                            text = "Humidity: %.1f %%".format(
+                                                measurement.humidityPct
+                                            ),
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                    }
+
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
             }
 
 
