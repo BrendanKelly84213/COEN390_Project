@@ -53,14 +53,6 @@ fun TopBar(
                 )
 
                 DropdownMenuItem(
-                    text = { Text("Settings") },
-                    onClick = {
-                        expanded = false
-                        onSettingsClick()
-                    }
-                )
-
-                DropdownMenuItem(
                     text = { Text("Logout") },
                     onClick = {
                         expanded = false

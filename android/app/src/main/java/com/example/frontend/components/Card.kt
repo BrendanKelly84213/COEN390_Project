@@ -16,7 +16,7 @@ import com.example.frontend.ui.theme.sageGreen
 
 @Composable
 fun TerrariumCard(
-    terrariumId: String,
+    terrariumName: String,
     readings: List<SensorReading>,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
@@ -36,7 +36,7 @@ fun TerrariumCard(
 
             // Terrarium title
             Text(
-                text = terrariumId,
+                text = terrariumName,
                 style = MaterialTheme.typography.titleMedium
             )
 
@@ -73,24 +73,33 @@ fun TerrariumCard(
                 }
             }
 
-            // Sensor readings
-            readings.forEach { sensor ->
-                HorizontalDivider()
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Text(
-                        sensor.id,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
+            // Sensor readings or empty state
+            if (readings.isEmpty()) {
+                Text(
+                    text = "No sensors connected yet.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = Color.DarkGray,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            } else {
+                readings.forEach { sensor ->
+                    HorizontalDivider()
 
                     Row(
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        Text("%.1f°C".format(sensor.temperatureC))
-                        Text("%.1f%%".format(sensor.humidityPct))
+                        Text(
+                            sensor.id,
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            Text("%.1f°C".format(sensor.temperatureC))
+                            Text("%.1f%%".format(sensor.humidityPct))
+                        }
                     }
                 }
             }

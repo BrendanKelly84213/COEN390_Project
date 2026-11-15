@@ -1,6 +1,7 @@
 
 package com.example.frontend.screens
 
+import android.util.Log
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -15,6 +16,7 @@ import androidx.compose.ui.unit.dp
 import com.example.frontend.components.TopBar
 import com.example.frontend.data.SensorReading
 import com.example.frontend.data.SensorRepository
+import com.example.frontend.data.TerrariumRepository
 import com.example.frontend.ui.theme.sageGreen
 import com.example.frontend.ui.theme.FrontendTheme
 
@@ -34,11 +36,29 @@ fun TerrariumScreen(
         mutableStateOf<List<SensorReading>>(emptyList())
     }
 
+    var terrariumName by remember {
+        mutableStateOf("Loading terrarium...")
+    }
+
     var errorMessage by remember {
         mutableStateOf<String?>(null)
     }
 
-    // Listen for sensor updates from Firestore
+    // Retrieve the terrarium's display name using its document ID.
+    LaunchedEffect(terrariumId) {
+        TerrariumRepository().getTerrarium(
+            terrariumId = terrariumId,
+            onSuccess = { terrarium ->
+                terrariumName = terrarium.name
+            },
+            onError = { exception ->
+                terrariumName = "Terrarium"
+                errorMessage = exception.message
+            }
+        )
+    }
+
+    // Listen for sensor updates from Firestore.
     DisposableEffect(terrariumId) {
         var listener: ListenerRegistration? = null
 
@@ -47,13 +67,34 @@ fun TerrariumScreen(
         if (repository != null) {
             listener = repository.listenToLatest(
                 onUpdate = { readings ->
+                    Log.d(
+                        "TerrariumScreen",
+                        "Requested terrarium ID: $terrariumId"
+                    )
+
+                    Log.d(
+                        "TerrariumScreen",
+                        "Received sensor terrarium IDs: ${
+                            readings.map { it.terrariumId }
+                        }"
+                    )
+
                     sensors = readings.filter {
                         it.terrariumId == terrariumId
                     }
-                    errorMessage = null
+
+                    Log.d(
+                        "TerrariumScreen",
+                        "Matching sensors: ${sensors.map { it.id }}"
+                    )
                 },
                 onError = { exception ->
                     errorMessage = exception.message
+                    Log.e(
+                        "TerrariumScreen",
+                        "Failed to retrieve sensors",
+                        exception
+                    )
                 }
             )
         } else {
@@ -85,15 +126,15 @@ fun TerrariumScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // Terrarium title
+            // Terrarium display name.
             item {
                 Text(
-                    text = terrariumId,
+                    text = terrariumName,
                     style = MaterialTheme.typography.headlineMedium
                 )
             }
 
-            // Livestream thumbnail placeholder
+            // Livestream thumbnail placeholder.
             item {
                 Text(
                     text = "Livestream",
@@ -122,7 +163,7 @@ fun TerrariumScreen(
                 }
             }
 
-            // Sensor section title
+            // Sensor section title.
             item {
                 Text(
                     text = "Sensors",
@@ -130,7 +171,7 @@ fun TerrariumScreen(
                 )
             }
 
-            // Error message
+            // Error message.
             if (errorMessage != null) {
                 item {
                     Text(
@@ -140,13 +181,14 @@ fun TerrariumScreen(
                 }
             }
 
-            // Sensor cards
+            // Empty sensor message.
             if (sensors.isEmpty() && errorMessage == null) {
                 item {
                     Text("No sensors found for this terrarium.")
                 }
             }
 
+            // Sensor cards.
             items(
                 items = sensors,
                 key = { it.id }
@@ -165,7 +207,6 @@ fun TerrariumScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-
                         Text(
                             text = sensor.id,
                             style = MaterialTheme.typography.titleMedium
