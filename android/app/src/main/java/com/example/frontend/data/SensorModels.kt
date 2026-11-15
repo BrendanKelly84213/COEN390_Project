@@ -19,3 +19,16 @@ data class Measurement(
     val humidityPct: Double,
     val recordedAt: Date?,
 )
+
+/** One alert document stored at `alerts/{alertId}`. */
+data class SensorAlert(
+    val id: String,
+    val sensorId: String,
+    val type: String,
+    val condition: String,
+    val value: Double,
+    val threshold: Double,
+    val unit: String,
+    val message: String,
+    val recordedAt: Date?,
+)
