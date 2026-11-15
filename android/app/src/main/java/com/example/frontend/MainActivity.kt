@@ -1,10 +1,18 @@
 
 package com.example.frontend
+<<<<<<< Updated upstream
 
 import android.Manifest //Remove
 import android.content.pm.PackageManager //Remove
 import android.os.Build //Remove
 import android.os.Bundle //Remove
+=======
+//Should just be for intializing the document
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import android.os.Bundle
+>>>>>>> Stashed changes
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,10 +31,15 @@ class MainActivity : ComponentActivity() {
 
     // Requests notification permission from the user.
     private val notificationPermissionLauncher =
+<<<<<<< Updated upstream
         registerForActivityResult(
             ActivityResultContracts.RequestPermission()
         ) {
             // Alerts still appear in the app when notifications are denied.
+=======
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+            // Alerts still appear in the app whdsen notifications are denied.
+>>>>>>> Stashed changes
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {

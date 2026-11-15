@@ -1,5 +1,6 @@
 package com.example.frontend.ui
 
+<<<<<<< Updated upstream
 // Compose runtime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -154,3 +155,5 @@ import com.example.frontend.data.SensorReading
         }
     }
 }
+=======
+>>>>>>> Stashed changes

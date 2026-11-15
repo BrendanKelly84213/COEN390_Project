@@ -1,5 +1,6 @@
 package com.example.frontend.ui
 
+<<<<<<< Updated upstream
 // Compose runtime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -123,3 +124,5 @@ private fun HistoryRow(measurement: Measurement) {
     }
 }
 
+=======
+>>>>>>> Stashed changes

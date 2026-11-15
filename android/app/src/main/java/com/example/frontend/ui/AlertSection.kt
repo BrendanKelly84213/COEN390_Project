@@ -1,5 +1,6 @@
 package com.example.frontend.ui
 
+<<<<<<< Updated upstream
 // Compose runtime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -193,3 +194,5 @@ private fun formatAlertValue(value: Double, unit: String): String =
     } else {
         String.format(Locale.getDefault(), "%.2f %s", value, unit)
     }
+=======
+>>>>>>> Stashed changes

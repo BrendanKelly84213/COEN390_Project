@@ -1,5 +1,6 @@
 package com.example.frontend.ui
 
+<<<<<<< Updated upstream
 // Compose runtime
 import androidx.compose.runtime.Composable
 
@@ -166,3 +167,5 @@ fun ErrorBanner(
         }
     }
 }
+=======
+>>>>>>> Stashed changes
