@@ -1,46 +1,32 @@
-
 package com.example.frontend
-<<<<<<< Updated upstream
 
-import android.Manifest //Remove
-import android.content.pm.PackageManager //Remove
-import android.os.Build //Remove
-import android.os.Bundle //Remove
-=======
-//Should just be for intializing the document
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
->>>>>>> Stashed changes
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.activity.result.contract.ActivityResultContracts //Remove
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Scaffold
 import androidx.compose.ui.Modifier
-import androidx.core.content.ContextCompat //Remove
+import androidx.core.content.ContextCompat
 import com.example.frontend.ui.SensorDataScreen
-import com.example.frontend.notifications.AlertNotifications //Remove
-import com.example.frontend.ui.theme.FrontendTheme //Remove
-import com.google.firebase.FirebaseApp //Remove
+import com.example.frontend.notifications.AlertNotifications
+import com.example.frontend.ui.theme.FrontendTheme
+import com.google.firebase.FirebaseApp
 
 class MainActivity : ComponentActivity() {
 
     // Requests notification permission from the user.
     private val notificationPermissionLauncher =
-<<<<<<< Updated upstream
-        registerForActivityResult(
-            ActivityResultContracts.RequestPermission()
-        ) {
-            // Alerts still appear in the app when notifications are denied.
-=======
-        registerForActivityResult(ActivityResultContracts.RequestPermission()) {
-            // Alerts still appear in the app whdsen notifications are denied.
->>>>>>> Stashed changes
-        }
+    registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) {
+        // Alerts still appear in the app when notifications are denied.
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

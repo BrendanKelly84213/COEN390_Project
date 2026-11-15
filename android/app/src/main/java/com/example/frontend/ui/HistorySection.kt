@@ -1,6 +1,5 @@
 package com.example.frontend.ui
 
-<<<<<<< Updated upstream
 // Compose runtime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -8,10 +7,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+
 // Compose layout
 import androidx.compose.foundation.layout.*
+
 // Compose Material 3
 import androidx.compose.material3.*
+
 // Compose UI
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -123,6 +125,3 @@ private fun HistoryRow(measurement: Measurement) {
         )
     }
 }
-
-=======
->>>>>>> Stashed changes

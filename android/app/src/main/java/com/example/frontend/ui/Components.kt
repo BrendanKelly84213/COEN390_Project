@@ -1,6 +1,5 @@
 package com.example.frontend.ui
 
-<<<<<<< Updated upstream
 // Compose runtime
 import androidx.compose.runtime.Composable
 
@@ -16,14 +15,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.clickable
 
 // Application data
 import com.example.frontend.data.SensorReading
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import androidx.compose.foundation.clickable
-
 
 @Composable
 fun SensorCard(
@@ -79,20 +77,19 @@ fun SensorCard(
     }
 }
 
- fun formatTimestamp(date: Date?): String =
+fun formatTimestamp(date: Date?): String =
     date?.let { timestampFormatter.format(it) } ?: "unknown time"
 
- fun formatTemperature(value: Double): String =
+fun formatTemperature(value: Double): String =
     String.format(Locale.getDefault(), "%.2f °C", value)
 
- fun formatHumidity(value: Double): String =
+fun formatHumidity(value: Double): String =
     String.format(Locale.getDefault(), "%.2f %%", value)
 
-
- val timestampFormatter = SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault())
+val timestampFormatter = SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault())
 
 @Composable
- fun Metric(label: String, value: String) {
+fun Metric(label: String, value: String) {
     Column {
         Text(
             text = label,
@@ -106,9 +103,8 @@ fun SensorCard(
     }
 }
 
-
 @Composable
- fun FirebaseConfigError(modifier: Modifier = Modifier) {
+fun FirebaseConfigError(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -167,5 +163,3 @@ fun ErrorBanner(
         }
     }
 }
-=======
->>>>>>> Stashed changes

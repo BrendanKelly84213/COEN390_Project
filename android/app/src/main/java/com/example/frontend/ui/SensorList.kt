@@ -1,6 +1,5 @@
 package com.example.frontend.ui
 
-<<<<<<< Updated upstream
 // Compose runtime
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -28,7 +27,7 @@ import com.example.frontend.data.SensorRepository
 import com.example.frontend.data.SensorReading
 
 @Composable
- fun SensorList(repository: SensorRepository, modifier: Modifier = Modifier) {
+fun SensorList(repository: SensorRepository, modifier: Modifier = Modifier) {
     var sensors by remember { mutableStateOf<List<SensorReading>>(emptyList()) }
     var isLoading by remember { mutableStateOf(true) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -155,5 +154,3 @@ import com.example.frontend.data.SensorReading
         }
     }
 }
-=======
->>>>>>> Stashed changes
