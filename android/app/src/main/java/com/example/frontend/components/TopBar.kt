@@ -17,7 +17,7 @@ fun TopBar(
 
     TopAppBar(
         title = {
-            Text(text = "SidWatch")
+            Text(text = "Monitor")
         },
         navigationIcon = {
             if (onBackClick != null) {

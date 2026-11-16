@@ -13,7 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
-
+import com.example.frontend.data.SensorThresholds
 import com.example.frontend.components.TopBar
 import com.example.frontend.data.SensorReading
 import com.example.frontend.data.SensorRepository
@@ -90,6 +90,14 @@ fun SensorScreen(
         mutableStateOf(false)
     }
 
+    var settingsSaveMessage by remember {
+        mutableStateOf<String?>(null)
+    }
+
+    val settingsRepository = remember {
+        SensorRepository.create()
+    }
+
     // Listen for updates to the selected sensor
     DisposableEffect(sensorId) {
 
@@ -135,6 +143,46 @@ fun SensorScreen(
             historyListener?.remove()
         }
     }
+
+
+    DisposableEffect(sensorId) {
+
+        if (settingsRepository == null) {
+            settingsSaveMessage = "Unable to connect to Firestore."
+            onDispose { }
+        } else {
+            val settingsListener =
+                settingsRepository.listenToSensorSettings(
+                    sensorId = sensorId,
+
+                    onUpdate = { settings ->
+                        if (settings != null) {
+                            minTemperature =
+                                settings.minTemperature.toString()
+
+                            maxTemperature =
+                                settings.maxTemperature.toString()
+
+                            minHumidity =
+                                settings.minHumidity.toString()
+
+                            maxHumidity =
+                                settings.maxHumidity.toString()
+                        }
+                    },
+
+                    onError = { exception ->
+                        settingsSaveMessage =
+                            exception.message ?: "Failed to load settings."
+                    }
+                )
+
+            onDispose {
+                settingsListener.remove()
+            }
+        }
+    }
+
 
     Scaffold(
         containerColor = sageGreen,
@@ -407,6 +455,7 @@ fun SensorScreen(
                     }
 
                     // Save button
+
                     Button(
                         onClick = {
                             val minTemp = minTemperature.toDoubleOrNull()
@@ -429,17 +478,41 @@ fun SensorScreen(
                             ) {
                                 validationError =
                                     "Check minimum and maximum values. Humidity must be between 0 and 100."
+                            } else if (settingsRepository == null) {
+                                validationError = "Unable to connect to Firestore."
                             } else {
                                 validationError = null
+                                settingsSaveMessage = "Saving settings..."
 
-                                onSaveSettings(
-                                    SensorSettings(
-                                        sensorId = sensorId,
-                                        minTemperature = minTemp,
-                                        maxTemperature = maxTemp,
-                                        minHumidity = minHum,
-                                        maxHumidity = maxHum
-                                    )
+                                val thresholds = SensorThresholds(
+                                    minTemperature = minTemp,
+                                    maxTemperature = maxTemp,
+                                    minHumidity = minHum,
+                                    maxHumidity = maxHum
+                                )
+
+                                settingsRepository.saveSensorSettings(
+                                    sensorId = sensorId,
+                                    settings = thresholds,
+
+                                    onSuccess = {
+                                        settingsSaveMessage = "Settings saved successfully."
+
+                                        onSaveSettings(
+                                            SensorSettings(
+                                                sensorId = sensorId,
+                                                minTemperature = minTemp,
+                                                maxTemperature = maxTemp,
+                                                minHumidity = minHum,
+                                                maxHumidity = maxHum
+                                            )
+                                        )
+                                    },
+
+                                    onError = { exception ->
+                                        settingsSaveMessage =
+                                            "Failed to save: ${exception.message}"
+                                    }
                                 )
                             }
                         },
@@ -449,6 +522,13 @@ fun SensorScreen(
                         )
                     ) {
                         Text("Save Changes")
+                    }
+                    settingsSaveMessage?.let { message ->
+                        Text(
+                            text = message,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }

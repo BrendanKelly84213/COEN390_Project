@@ -22,6 +22,7 @@ import com.example.frontend.ui.theme.sageGreen
 import com.example.frontend.ui.theme.FrontendTheme
 import androidx.compose.material3.OutlinedButton
 
+import com.example.frontend.data.ControlRepository
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
@@ -72,6 +73,26 @@ fun TerrariumScreen(
 
     var assignmentError by remember {
         mutableStateOf<String?>(null)
+    }
+
+    // Environmental control states
+    var lightingEnabled by remember {
+        mutableStateOf(false)
+    }
+
+    var heaterEnabled by remember {
+        mutableStateOf(false)
+    }
+
+    var humidifierEnabled by remember {
+        mutableStateOf(false)
+    }
+    var automaticControlEnabled by remember {
+        mutableStateOf(false)
+    }
+
+    val controlRepository = remember {
+        ControlRepository()
     }
 
     // Retrieve the terrarium's display name using its document ID.
@@ -138,6 +159,38 @@ fun TerrariumScreen(
         }
     }
 
+    DisposableEffect(terrariumId) {
+        val listener = controlRepository.listenToControls(
+            terrariumId = terrariumId,
+
+            onUpdate = { controls ->
+                lightingEnabled =
+                    controls["lightingEnabled"] as? Boolean ?: false
+
+                heaterEnabled =
+                    controls["heaterEnabled"] as? Boolean ?: false
+
+                humidifierEnabled =
+                    controls["humidifierEnabled"] as? Boolean ?: false
+
+                automaticControlEnabled =
+                    controls["automaticControlEnabled"] as? Boolean ?: false
+
+                Log.d(
+                    "TerrariumScreen",
+                    "Controls updated from Firebase: $controls"
+                )
+            },
+            onError = { error ->
+                Log.e("TerrariumScreen", "Failed to listen to controls", error)
+            }
+        )
+
+        onDispose {
+            listener.remove()
+        }
+    }
+
     Scaffold(
         containerColor = sageGreen,
         topBar = {
@@ -147,6 +200,29 @@ fun TerrariumScreen(
                 onBackClick = onBackClick,
                 onProfileClick = onProfileClick
             )
+        },
+        bottomBar = {
+            Surface(
+                color = sageGreen,
+                shadowElevation = 4.dp
+            ) {
+                Button(
+                    onClick = {
+                        selectedSensorIds = emptySet()
+                        assignmentMessage = null
+                        assignmentError = null
+                        showAddSensorDialog = true
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF2E5939)
+                    )
+                ) {
+                    Text("Add Sensors")
+                }
+            }
         }
     ) { innerPadding ->
 
@@ -195,29 +271,87 @@ fun TerrariumScreen(
                 }
             }
 
+
+            // Environmental controls
+            item {
+
+                EnvironmentalControls(
+                    lightingEnabled = lightingEnabled,
+                    onLightingChange = {
+                        lightingEnabled = it
+
+                        controlRepository.updateControl(
+                            terrariumId = terrariumId,
+                            controlName = "lightingEnabled",
+                            enabled = it,
+                            onError = { error ->
+                                Log.e("TerrariumControls", "Lighting update failed", error)
+                            }
+                        )
+                    },
+
+                    heaterEnabled = heaterEnabled,
+                    onHeaterChange = {
+                        heaterEnabled = it
+
+                        controlRepository.updateControl(
+                            terrariumId = terrariumId,
+                            controlName = "heaterEnabled",
+                            enabled = it,
+                            onError = { error ->
+                                Log.e("TerrariumControls", "Heater update failed", error)
+                            }
+                        )
+                    },
+
+                    humidifierEnabled = humidifierEnabled,
+                    onHumidifierChange = {
+                        humidifierEnabled = it
+
+                        controlRepository.updateControl(
+                            terrariumId = terrariumId,
+                            controlName = "humidifierEnabled",
+                            enabled = it,
+                            onError = { error ->
+                                Log.e("TerrariumControls", "Humidifier update failed", error)
+                            }
+                        )
+                    },
+
+                    automaticControlEnabled = automaticControlEnabled,
+
+                    onAutomaticControlChange = { enabled ->
+                        controlRepository.updateControl(
+                            terrariumId = terrariumId,
+                            controlName = "automaticControlEnabled",
+                            enabled = enabled,
+                            onSuccess = {
+                                Log.d(
+                                    "TerrariumControls",
+                                    "Automatic control updated to $enabled"
+                                )
+                            },
+                            onError = { error ->
+                                Log.e(
+                                    "TerrariumControls",
+                                    "Automatic control update failed",
+                                    error
+                                )
+                            }
+                        )
+                    }
+                )
+
+
+
+            }
+
             // Sensor section title.
             item {
                 Text(
                     text = "Sensors",
                     style = MaterialTheme.typography.titleLarge
                 )
-            }
-
-            item {
-                Button(
-                    onClick = {
-                        selectedSensorIds = emptySet()
-                        assignmentMessage = null
-                        assignmentError = null
-                        showAddSensorDialog = true
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF2E5939)
-                    )
-                ) {
-                    Text("Add Sensors")
-                }
             }
 
             // Error message.
@@ -251,8 +385,7 @@ fun TerrariumScreen(
 
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 6.dp),
+                        .fillMaxWidth(),
                     onClick = {
                         onSensorClick(sensor.id)
                     },
@@ -261,11 +394,11 @@ fun TerrariumScreen(
                     )
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.padding(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
 
-                        // Sensor title and delete icon
+                        // Sensor title and delete button
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically,
@@ -273,7 +406,7 @@ fun TerrariumScreen(
                         ) {
                             Text(
                                 text = sensor.id,
-                                style = MaterialTheme.typography.titleLarge,
+                                style = MaterialTheme.typography.titleSmall,
                                 modifier = Modifier.weight(1f)
                             )
 
@@ -281,7 +414,7 @@ fun TerrariumScreen(
                                 onClick = {
                                     showRemoveConfirmation = true
                                 },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier.size(30.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Delete,
@@ -294,10 +427,28 @@ fun TerrariumScreen(
 
                         HorizontalDivider()
 
-                        Text("Temperature: %.1f °C".format(sensor.temperatureC))
-                        Text("Humidity: %.1f %%".format(sensor.humidityPct))
-                        Text("Address: ${sensor.address}")
-                        Text("Bus: ${sensor.busNum}")
+                        // Temperature and humidity side by side
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Temperature: %.1f °C".format(sensor.temperatureC),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+
+                            Text(
+                                text = "Humidity: %.1f %%".format(sensor.humidityPct),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        // Hardware information
+                        Text(
+                            text = "Address: ${sensor.address} | Bus: ${sensor.busNum}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
@@ -553,6 +704,95 @@ fun TerrariumScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+}
+
+
+
+@Composable
+fun EnvironmentalControls(
+    lightingEnabled: Boolean,
+    onLightingChange: (Boolean) -> Unit,
+    heaterEnabled: Boolean,
+    onHeaterChange: (Boolean) -> Unit,
+    humidifierEnabled: Boolean,
+    onHumidifierChange: (Boolean) -> Unit,
+    automaticControlEnabled: Boolean,
+    onAutomaticControlChange: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(
+                text = "Environmental Controls",
+                style = MaterialTheme.typography.titleSmall
+            )
+
+            HorizontalDivider()
+
+            ControlSwitchRow(
+                title = "Lighting",
+                checked = lightingEnabled,
+                onCheckedChange = onLightingChange
+            )
+
+            ControlSwitchRow(
+                title = "Heater",
+                checked = heaterEnabled,
+                onCheckedChange = onHeaterChange,
+                enabled = !automaticControlEnabled
+            )
+
+            ControlSwitchRow(
+                title = "Humidifier",
+                checked = humidifierEnabled,
+                onCheckedChange = onHumidifierChange,
+                enabled = !automaticControlEnabled
+            )
+
+            HorizontalDivider()
+
+            ControlSwitchRow(
+                title = "Automatic Control",
+                checked = automaticControlEnabled,
+                onCheckedChange = onAutomaticControlChange
+            )
+        }
+    }
+}
+
+@Composable
+fun ControlSwitchRow(
+    title: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(36.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.bodySmall
+        )
+
+        Switch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+            enabled = enabled,
+            modifier = Modifier.height(28.dp)
         )
     }
 }

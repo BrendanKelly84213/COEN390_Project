@@ -5,6 +5,13 @@ import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
 import com.google.firebase.firestore.Query
 
+data class SensorThresholds(
+    val minTemperature: Double,
+    val maxTemperature: Double,
+    val minHumidity: Double,
+    val maxHumidity: Double
+)
+
 class SensorRepository(
     private val firestore: FirebaseFirestore = FirebaseFirestore.getInstance()
 ) {
@@ -200,6 +207,85 @@ class SensorRepository(
             }
     }
 
+
+    // Save threshold settings for a sensor
+    fun saveSensorSettings(
+        sensorId: String,
+        settings: SensorThresholds,
+        onSuccess: () -> Unit = {},
+        onError: (Exception) -> Unit = {}
+    ) {
+        val updates = mapOf(
+            "settings.minTemperature" to settings.minTemperature,
+            "settings.maxTemperature" to settings.maxTemperature,
+            "settings.minHumidity" to settings.minHumidity,
+            "settings.maxHumidity" to settings.maxHumidity
+        )
+
+        firestore.collection(SENSORS_COLLECTION)
+            .document(sensorId)
+            .update(updates)
+            .addOnSuccessListener {
+                onSuccess()
+            }
+            .addOnFailureListener { exception ->
+                onError(exception)
+            }
+    }
+
+    // Listen for threshold settings from a specific sensor
+    fun listenToSensorSettings(
+        sensorId: String,
+        onUpdate: (SensorThresholds?) -> Unit,
+        onError: (Exception) -> Unit
+    ): ListenerRegistration {
+
+        return firestore.collection(SENSORS_COLLECTION)
+            .document(sensorId)
+            .addSnapshotListener { snapshot, error ->
+
+                if (error != null) {
+                    onError(error)
+                    return@addSnapshotListener
+                }
+
+                val settings = snapshot?.get("settings") as? Map<*, *>
+
+                if (settings == null) {
+                    onUpdate(null)
+                    return@addSnapshotListener
+                }
+
+                fun getNumber(key: String): Double? {
+                    return (settings[key] as? Number)?.toDouble()
+                }
+
+                val minTemp = getNumber("minTemperature")
+                val maxTemp = getNumber("maxTemperature")
+                val minHum = getNumber("minHumidity")
+                val maxHum = getNumber("maxHumidity")
+
+                if (
+                    minTemp != null &&
+                    maxTemp != null &&
+                    minHum != null &&
+                    maxHum != null
+                ) {
+                    onUpdate(
+                        SensorThresholds(
+                            minTemperature = minTemp,
+                            maxTemperature = maxTemp,
+                            minHumidity = minHum,
+                            maxHumidity = maxHum
+                        )
+                    )
+                } else {
+                    onUpdate(null)
+                }
+            }
+    }
+
+
     companion object {
 
         private const val SENSORS_COLLECTION = "sensors"
@@ -216,3 +302,4 @@ class SensorRepository(
         }
     }
 }
+
