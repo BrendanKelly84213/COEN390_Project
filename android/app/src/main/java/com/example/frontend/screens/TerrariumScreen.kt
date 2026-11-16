@@ -22,6 +22,10 @@ import com.example.frontend.ui.theme.sageGreen
 import com.example.frontend.ui.theme.FrontendTheme
 import androidx.compose.material3.OutlinedButton
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import com.google.firebase.firestore.ListenerRegistration
 
 @Composable
@@ -234,9 +238,14 @@ fun TerrariumScreen(
             }
 
             // Sensor cards.
+// Sensor cards.
             items(items = sensors, key = { it.id }) { sensor ->
 
                 var showRemoveConfirmation by remember(sensor.id) {
+                    mutableStateOf(false)
+                }
+
+                var isRemoving by remember(sensor.id) {
                     mutableStateOf(false)
                 }
 
@@ -246,68 +255,113 @@ fun TerrariumScreen(
                         .padding(vertical = 6.dp),
                     onClick = {
                         onSensorClick(sensor.id)
-                    }
+                    },
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Text(
-                            text = "Sensor: ${sensor.id}",
-                            style = MaterialTheme.typography.titleMedium
-                        )
 
-                        Text("Temperature: ${sensor.temperatureC} °C")
-                        Text("Humidity: ${sensor.humidityPct} %")
+                        // Sensor title and delete icon
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = sensor.id,
+                                style = MaterialTheme.typography.titleLarge,
+                                modifier = Modifier.weight(1f)
+                            )
+
+                            IconButton(
+                                onClick = {
+                                    showRemoveConfirmation = true
+                                },
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Remove Sensor",
+                                    tint = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+
+                        HorizontalDivider()
+
+                        Text("Temperature: %.1f °C".format(sensor.temperatureC))
+                        Text("Humidity: %.1f %%".format(sensor.humidityPct))
                         Text("Address: ${sensor.address}")
                         Text("Bus: ${sensor.busNum}")
-
-                        // Remove Sensor button
-                        OutlinedButton(
-                            onClick = {
-                                showRemoveConfirmation = true
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Remove Sensor")
-                        }
                     }
                 }
 
-                // Confirmation popup only appears after pressing Remove Sensor
+                // Remove sensor confirmation dialog
                 if (showRemoveConfirmation) {
                     AlertDialog(
                         onDismissRequest = {
-                            showRemoveConfirmation = false
+                            if (!isRemoving) {
+                                showRemoveConfirmation = false
+                            }
                         },
                         title = {
                             Text("Remove Sensor")
                         },
                         text = {
-                            Text("Are you sure you want to remove this sensor from the terrarium?")
+                            Text(
+                                "Are you sure you want to remove ${sensor.id} " +
+                                        "from this terrarium?"
+                            )
                         },
                         confirmButton = {
                             TextButton(
+                                enabled = !isRemoving,
                                 onClick = {
+                                    isRemoving = true
+
                                     val repository = SensorRepository.create()
 
-                                    repository?.removeSensorFromTerrarium(
-                                        sensorId = sensor.id,
-                                        onSuccess = {
-                                            showRemoveConfirmation = false
-                                        },
-                                        onError = { exception ->
-                                            errorMessage = exception.message
-                                                ?: "Failed to remove sensor"
-                                        }
-                                    )
+                                    if (repository != null) {
+                                        repository.removeSensorFromTerrarium(
+                                            sensorId = sensor.id,
+                                            onSuccess = {
+                                                isRemoving = false
+                                                showRemoveConfirmation = false
+                                            },
+                                            onError = { exception ->
+                                                isRemoving = false
+                                                errorMessage = exception.message
+                                                    ?: "Failed to remove sensor."
+                                            }
+                                        )
+                                    } else {
+                                        isRemoving = false
+                                        errorMessage = "Unable to connect to Firestore."
+                                        showRemoveConfirmation = false
+                                    }
                                 }
                             ) {
-                                Text("Remove")
+                                if (isRemoving) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp
+                                    )
+                                } else {
+                                    Text(
+                                        "Remove",
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
                             }
                         },
                         dismissButton = {
                             TextButton(
+                                enabled = !isRemoving,
                                 onClick = {
                                     showRemoveConfirmation = false
                                 }
@@ -425,64 +479,10 @@ fun TerrariumScreen(
                                                 text = "Bus: ${sensor.busNum}"
                                             )
 
-                                            // Remove sensor button
-                                            var showRemoveConfirmation by remember(sensor.id) {
-                                                mutableStateOf(false)
-                                            }
 
-                                            OutlinedButton(
-                                                onClick = {
-                                                    showRemoveConfirmation = true
-                                                },
-                                                modifier = Modifier.fillMaxWidth()
-                                            ) {
-                                                Text("Remove from Terrarium")
-                                            }
 
-// Confirmation dialog
-                                            if (showRemoveConfirmation) {
-                                                AlertDialog(
-                                                    onDismissRequest = {
-                                                        showRemoveConfirmation = false
-                                                    },
-                                                    title = {
-                                                        Text("Remove Sensor")
-                                                    },
-                                                    text = {
-                                                        Text(
-                                                            "Are you sure you want to remove ${sensor.id} from this terrarium?"
-                                                        )
-                                                    },
-                                                    confirmButton = {
-                                                        TextButton(
-                                                            onClick = {
-                                                                val repository = SensorRepository.create()
 
-                                                                repository?.removeSensorFromTerrarium(
-                                                                    sensorId = sensor.id,
-                                                                    onSuccess = {
-                                                                        showRemoveConfirmation = false
-                                                                    },
-                                                                    onError = { exception ->
-                                                                        errorMessage = exception.message
-                                                                    }
-                                                                )
-                                                            }
-                                                        ) {
-                                                            Text("Remove")
-                                                        }
-                                                    },
-                                                    dismissButton = {
-                                                        TextButton(
-                                                            onClick = {
-                                                                showRemoveConfirmation = false
-                                                            }
-                                                        ) {
-                                                            Text("Cancel")
-                                                        }
-                                                    }
-                                                )
-                                            }
+
                                         }
                                     }
                                 }

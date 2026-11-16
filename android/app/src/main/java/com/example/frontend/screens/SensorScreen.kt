@@ -20,6 +20,9 @@ import com.example.frontend.data.SensorRepository
 import com.example.frontend.ui.theme.sageGreen
 import com.example.frontend.ui.theme.FrontendTheme
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Delete
+
 import com.example.frontend.data.Measurement
 import java.text.SimpleDateFormat
 import java.util.Locale
@@ -77,6 +80,14 @@ fun SensorScreen(
 
     var historyError by remember {
         mutableStateOf<String?>(null)
+    }
+
+    var showRemoveConfirmation by remember {
+        mutableStateOf(false)
+    }
+
+    var isRemoving by remember {
+        mutableStateOf(false)
     }
 
     // Listen for updates to the selected sensor
@@ -146,11 +157,32 @@ fun SensorScreen(
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
 
-            // Sensor title
-            Text(
-                text = sensorId,
-                style = MaterialTheme.typography.headlineMedium
-            )
+// Sensor title and remove button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = sensorId,
+                    style = MaterialTheme.typography.headlineMedium,
+                    modifier = Modifier.weight(1f)
+                )
+
+                IconButton(
+                    onClick = {
+                        showRemoveConfirmation = true
+                    },
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Remove Sensor",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+            }
 
             // Live readings
             Text(
@@ -421,6 +453,77 @@ fun SensorScreen(
                 }
             }
         }
+    }
+    if (showRemoveConfirmation) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isRemoving) {
+                    showRemoveConfirmation = false
+                }
+            },
+            title = {
+                Text("Remove Sensor")
+            },
+            text = {
+                Text(
+                    "Are you sure you want to remove this sensor " +
+                            "from its terrarium?"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    enabled = !isRemoving,
+                    onClick = {
+                        isRemoving = true
+
+                        val repository = SensorRepository.create()
+
+                        if (repository != null) {
+                            repository.removeSensorFromTerrarium(
+                                sensorId = sensorId,
+                                onSuccess = {
+                                    isRemoving = false
+                                    showRemoveConfirmation = false
+                                    onBackClick()
+                                },
+                                onError = {
+                                    isRemoving = false
+                                    showRemoveConfirmation = false
+                                    errorMessage = it.message
+                                        ?: "Failed to remove sensor."
+                                }
+                            )
+                        } else {
+                            isRemoving = false
+                            showRemoveConfirmation = false
+                            errorMessage = "Unable to connect to Firestore."
+                        }
+                    }
+                ) {
+                    if (isRemoving) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text(
+                            "Remove",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    enabled = !isRemoving,
+                    onClick = {
+                        showRemoveConfirmation = false
+                    }
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }
 
