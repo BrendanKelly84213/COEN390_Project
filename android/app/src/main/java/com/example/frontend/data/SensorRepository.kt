@@ -89,24 +89,29 @@ class SensorRepository(
             }
     }
 
-    // Convert a Firestore sensor document into SensorReading
+
     private fun toSensorReading(
         document: DocumentSnapshot
     ): SensorReading? {
 
-        val id = document.id
-
         return SensorReading(
-            id = id,
-            terrariumId = document.getString("terrarium_id")
-                ?: return null,
+            id = document.id,
+
+            // Empty string means the sensor is not assigned
+            // to any terrarium yet.
+            terrariumId = document.getString("terrarium_id") ?: "",
+
             busNum = document.getLong("bus_num")?.toInt() ?: 1,
-            address = document.getString("address") ?: "0",
+            address = document.getString("address") ?: "Unknown",
+
+            // These default to 0.0 until the sensor sends readings.
             temperatureC = doubleField(document, "temperature_c"),
             humidityPct = doubleField(document, "humidity_pct"),
+
             recordedAt = document.getTimestamp("timestamp")?.toDate()
         )
     }
+
 
     // Convert a Firestore measurement document into Measurement
     private fun toMeasurement(
