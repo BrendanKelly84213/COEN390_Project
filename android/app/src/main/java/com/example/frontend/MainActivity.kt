@@ -23,10 +23,32 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import com.example.frontend.navigation.AppNavigation
+import com.example.frontend.notifications.AlertNotifications
+import com.google.firebase.FirebaseApp
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
 
 class MainActivity : ComponentActivity() {
+
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Initialize notification channel
+        AlertNotifications.ensureChannel(this)
+
+        // Subscribe to Firebase alert notifications
+        if (FirebaseApp.getApps(this).isNotEmpty()) {
+            AlertNotifications.subscribeToAlerts()
+        }
+
+        // Request notification permission
+        requestNotificationPermission()
 
         enableEdgeToEdge()
 
@@ -34,6 +56,21 @@ class MainActivity : ComponentActivity() {
             FrontendTheme {
                 AppNavigation()
             }
+        }
+    }
+
+    private fun requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return
+
+        val granted = ContextCompat.checkSelfPermission(
+            this,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+
+        if (!granted) {
+            notificationPermissionLauncher.launch(
+                Manifest.permission.POST_NOTIFICATIONS
+            )
         }
     }
 }
